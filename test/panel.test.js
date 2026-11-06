@@ -172,3 +172,10 @@ test('erreur interne: réponse générique, pas de crash', async () => {
   console.error = orig;
   assert.match(f.text(), /Erreur interne/);
 });
+
+test('bot non membre du serveur (scope bot manquant): message explicite, aucune erreur', async () => {
+  const f = fakeInteraction({ commandName: 'anniversaire-config' });
+  f.interaction.guild = null;
+  await handleInteraction(f.interaction);
+  assert.match(f.text(), /scope \*\*bot\*\*/);
+});

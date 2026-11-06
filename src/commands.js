@@ -99,6 +99,14 @@ async function handleConfig(i) {
 export async function handleInteraction(i) {
   if (!i.guildId) return;
   try {
+    // Bot invité avec le seul scope `applications.commands`: les commandes arrivent mais le bot n'est pas
+    // membre du serveur (i.guild nul) et ne pourrait ni lire les salons ni poster d'annonce.
+    if (!i.guild) {
+      return await i.reply({
+        content: '❌ Je ne suis pas membre de ce serveur. Un admin doit m\'inviter avec le scope **bot** (en plus de applications.commands).',
+        flags: EPHEMERAL,
+      });
+    }
     if (i.isChatInputCommand()) {
       if (i.commandName === 'anniversaire') return await openFlow(i);
       if (i.commandName === 'anniversaires') return await reply(i, upcomingText(i.guildId));
