@@ -55,8 +55,10 @@ const DEFAULT_TZ = 'Europe/Paris';
 const MAX_URL_LENGTH = 400;
 const SESSION_TTL_MS = 10 * 60_000; // < 15 min: durée de validité du jeton d'une interaction
 
-const button = (id, label, emoji, style = ButtonStyle.Secondary) =>
-  new ButtonBuilder().setCustomId(id).setLabel(label).setEmoji(emoji).setStyle(style);
+const button = (id, label, emoji, style = ButtonStyle.Secondary) => {
+  const b = new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
+  return emoji ? b.setEmoji(emoji) : b;
+};
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const backButton = () => button(ID.back, 'Retour', '↩️');
 
@@ -133,15 +135,17 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
  * Tout le tableau de bord est en V2 car ce drapeau ne peut jamais être retiré d'un message: autant
  * que tous les écrans d'un même message privé soient du même format.
  */
-function v2({ texts, media = [], files = [], rows = [] }) {
+function v2({ texts, before = [], media = [], files = [], rows = [], footer = null }) {
   const container = new ContainerBuilder().setAccentColor(0xf5a623)
     .addTextDisplayComponents(...texts.map((t) => new TextDisplayBuilder().setContent(t)));
+  if (before.length) container.addActionRowComponents(...before); // ex: barre de recherche au-dessus de la galerie
   if (media.length) {
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(...media.map((url) => new MediaGalleryItemBuilder().setURL(url))),
     );
   }
   if (rows.length) container.addActionRowComponents(...rows);
+  if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
   return { components: [container], files, flags: V2, allowedMentions: NO_MENTIONS };
 }
 
@@ -221,11 +225,11 @@ const mediaMenu = () => screen(
   row(backButton()),
 );
 
-const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitle('Chercher un GIF').addLabelComponents(
+const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitle('Rechercher un GIF').addLabelComponents(
   new LabelBuilder()
-    .setLabel('Que cherches-tu ?')
-    .setDescription('Un mot ou deux, par exemple: fête, gâteau, champagne…')
-    .setTextInputComponent(textInput('query', TextInputStyle.Short).setRequired(true).setMaxLength(50)),
+    .setLabel('Rechercher sur GIPHY')
+    .setTextInputComponent(textInput('query', TextInputStyle.Short)
+      .setRequired(true).setMaxLength(50).setPlaceholder('🔍  fête, gâteau, champagne…')),
 );
 
 // Grille façon sélecteur Discord: 4 GIF à la fois (galerie de médias V2), tendances par défaut,
@@ -249,24 +253,25 @@ const gifPageCount = (state) => Math.ceil(state.results.length / GIFS_PER_PAGE);
 function gifScreen(state) {
   const start = state.page * GIFS_PER_PAGE;
   const shown = state.results.slice(start, start + GIFS_PER_PAGE);
-  const title = state.query ? `🔎 « ${state.query} »` : '🔥 GIF recommandés';
+  const title = state.query ? `« ${state.query} »` : 'GIF recommandés';
+  // Même ordre que le sélecteur de Discord: barre de recherche, catégories, grille, puis navigation.
   return v2({
-    texts: [
-      `### ${title} — page ${state.page + 1}/${gifPageCount(state)}`,
-      'Clique sur le **numéro** du GIF que tu veux (1 2 en haut, 3 4 en bas), ou cherche un mot précis.\n-# Powered by GIPHY',
+    texts: [`### 🎞️ ${title}`],
+    before: [
+      row(button(ID.gifQuery, 'Rechercher sur GIPHY…', '🔍')),
+      row(new StringSelectMenuBuilder().setCustomId(ID.gifCategory).setPlaceholder('Catégories: fête, LOL, amour…')
+        .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
     ],
     media: shown.map((gif) => gif.preview),
     rows: [
-      row(...shown.map((_, k) => button(ID.gifPick[k], String(k + 1), '🎞️', ButtonStyle.Success))),
-      row(new StringSelectMenuBuilder().setCustomId(ID.gifCategory).setPlaceholder('Catégories')
-        .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
+      row(...shown.map((_, k) => button(ID.gifPick[k], String(k + 1), null, ButtonStyle.Success))),
       row(
         button(ID.gifPrev, 'Précédents', '◀️'),
         button(ID.gifNext, 'Suivants', '▶️'),
-        button(ID.gifQuery, 'Rechercher', '🔎', ButtonStyle.Primary),
         backButton(),
       ),
     ],
+    footer: `-# Page ${state.page + 1}/${gifPageCount(state)} · clique sur le numéro du GIF choisi (1 2 en haut, 3 4 en bas) · Powered by GIPHY`,
   });
 }
 

@@ -182,14 +182,15 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
     const first = open.last('editReply');
     assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/100.gif`));
-    assert.match(view(first).content, /recommandés — page 1\/2/);
+    assert.match(view(first).content, /GIF recommandés/);
+    assert.match(view(first).content, /Page 1\/2/);
     assert.match(view(first).content, /Powered by GIPHY/);
     assert.equal(first.flags & 32768, 32768); // Components V2
-    assert.deepEqual(ids(first), [...ID.gifPick, ID.gifCategory, ID.gifPrev, ID.gifNext, ID.gifQuery, ID.back]);
+    assert.deepEqual(ids(first), [ID.gifQuery, ID.gifCategory, ...ID.gifPick, ID.gifPrev, ID.gifNext, ID.back]);
     assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/trending\?.*rating=g/);
 
-    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /page 2\/2/);
-    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /page 1\/2/); // boucle
+    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 2\/2/);
+    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 1\/2/); // boucle
     await button(ID.gifPrev, g); // page 2
 
     const pick = await button(ID.gifPick[1], g); // 2e GIF de la page 2 → g5
@@ -214,7 +215,7 @@ test('GIF: la recherche remplace les recommandés (mot normalisé, mis en cache)
 
     const lastPage = await button(ID.gifNext, g); // 5 résultats → page 2 n'a qu'un GIF
     assert.equal(view(lastPage.last('update')).media.length, 1);
-    assert.deepEqual(ids(lastPage.last('update')).slice(0, 2), [ID.gifPick[0], ID.gifCategory]);
+    assert.deepEqual(ids(lastPage.last('update')).slice(0, 3), [ID.gifQuery, ID.gifCategory, ID.gifPick[0]]);
 
     await modal(ID.modalGif, { query: 'fête surprise' }, g);
     assert.equal(fetchMock.mock.callCount(), 1);
