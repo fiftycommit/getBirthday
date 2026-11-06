@@ -7,6 +7,7 @@ import { fakeInteraction, useTempDataDir, view } from './helpers.js';
 
 useTempDataDir();
 process.env.KLIPY_API_KEY = 'test-key';
+delete process.env.GIPHY_API_KEY;
 const db = await import('../src/db.js');
 const { handleInteraction } = await import('../src/commands.js');
 const { ID, handleDirectMessage } = await import('../src/panel.js');
@@ -273,6 +274,93 @@ test('GIF: choisir sans recherche active (expirée / redémarrage) → écran «
   const f = await button(ID.gifPick[0], { guildId: 's3', ...eph });
   assert.match(view(f.last('update')).content, /expiré/);
   assert.equal(db.getBirthday('s3', 'U').media_url, null);
+});
+
+const giphyJson = (n) => ({ ok: true, status: 200, json: async () => ({
+  meta: { status: 200 }, data: Array.from({ length: n }, (_, k) => ({
+    id: `g${k}`, title: `t${k}`, images: {
+      original: { url: `https://media.giphy.com/media/g${k}/giphy.gif` },
+      fixed_width_small: { url: `https://media.giphy.com/media/g${k}/preview.gif` },
+    },
+  })),
+}) });
+
+test('GIF: les fournisseurs configurés sont proposés indépendamment', async () => {
+  db.setBirthdayDate('providers-menu', 'U', 6, 11, null);
+  const g = { guildId: 'providers-menu', ...eph };
+  process.env.GIPHY_API_KEY = 'giphy-key';
+  try {
+    let menu = ids((await button(ID.media, g)).last('update'));
+    assert.ok(menu.includes(ID.gifSearch) && menu.includes(ID.giphySearch));
+    delete process.env.KLIPY_API_KEY;
+    menu = ids((await button(ID.media, g)).last('update'));
+    assert.ok(!menu.includes(ID.gifSearch) && menu.includes(ID.giphySearch));
+    delete process.env.GIPHY_API_KEY;
+    menu = ids((await button(ID.media, g)).last('update'));
+    assert.ok(!menu.includes(ID.gifSearch) && !menu.includes(ID.giphySearch));
+    assert.ok(menu.includes(ID.mediaGif));
+  } finally {
+    process.env.KLIPY_API_KEY = 'test-key';
+    delete process.env.GIPHY_API_KEY;
+  }
+});
+
+test('GIF: GIPHY et KLIPY conservent chacun recherche et page lors du changement', async () => {
+  db.setBirthdayDate('providers-state', 'U', 6, 11, null);
+  const g = { guildId: 'providers-state', ...eph };
+  process.env.GIPHY_API_KEY = 'giphy-key';
+  try {
+    await withFetch(async (url) => String(url).includes('api.giphy.com') ? giphyJson(8) : gifJson(8), async (fetchMock) => {
+      const first = await button(ID.giphySearch, g);
+      assert.match(view(first.last('editReply')).content, /Powered by GIPHY/);
+      const url = new URL(fetchMock.mock.calls[0].arguments[0]);
+      assert.equal(url.origin + url.pathname, 'https://api.giphy.com/v1/gifs/trending');
+      assert.equal(url.searchParams.get('api_key'), 'giphy-key');
+      assert.equal(url.searchParams.get('rating'), 'g');
+      assert.equal(view(first.last('editReply')).media[0], 'https://media.giphy.com/media/g0/preview.gif');
+      await button(ID.giphyNext, g);
+      const klipy = await button(ID.gifSearch, g);
+      assert.match(view(klipy.last('editReply')).content, /Powered by KLIPY/);
+      await modal(ID.modalGif, { query: 'fête' }, g);
+      const restored = await button(ID.giphySearch, g);
+      assert.match(view(restored.last('update')).content, /Page 2\/2/);
+      const back = await button(ID.gifSearch, g);
+      assert.match(view(back.last('update')).content, /« fête »/);
+      const search = await modal(ID.modalGiphy, { query: 'Happy  Birthday' }, g);
+      assert.match(view(search.last('editReply')).content, /Powered by GIPHY/);
+      const searchUrl = new URL(fetchMock.mock.calls.at(-1).arguments[0]);
+      assert.equal(searchUrl.pathname, '/v1/gifs/search');
+      assert.equal(searchUrl.searchParams.get('q'), 'happy birthday');
+      await button(ID.giphyPick[1], g);
+      assert.equal(db.getBirthday('providers-state', 'U').media_url, 'https://media.giphy.com/media/g1/giphy.gif');
+    });
+  } finally {
+    delete process.env.GIPHY_API_KEY;
+  }
+});
+
+test('GIF: erreurs GIPHY sans bascule ni modification du média enregistré', async () => {
+  db.setBirthdayDate('giphy-errors', 'U', 6, 11, null);
+  db.setBirthdayMedia('giphy-errors', 'U', { path: null, name: null, url: 'https://example.com/old.gif' });
+  const g = { guildId: 'giphy-errors', ...eph };
+  process.env.GIPHY_API_KEY = 'giphy-key';
+  try {
+    for (const [query, response, message] of [
+      ['aucun-giphy', giphyJson(0), /Aucun GIF GIPHY/],
+      ['quota-giphy', { ok: false, status: 429 }, /Trop de recherches GIPHY/],
+      ['invalide-giphy', { ok: true, status: 200, json: async () => ({ data: [{}] }) }, /réponse invalide/],
+    ]) {
+      await withFetch(async () => response, async (fetchMock) => {
+        const result = await modal(ID.modalGiphy, { query }, g);
+        assert.match(view(result.last('editReply')).content, message);
+        assert.equal(fetchMock.mock.callCount(), 1);
+        assert.match(fetchMock.mock.calls[0].arguments[0], /api\.giphy\.com/);
+      });
+    }
+    assert.equal(db.getBirthday('giphy-errors', 'U').media_url, 'https://example.com/old.gif');
+  } finally {
+    delete process.env.GIPHY_API_KEY;
+  }
 });
 
 // ── GIF via messages privés ──

@@ -15,6 +15,7 @@ import {
   setBirthdayMessage,
 } from './db.js';
 import { KlipyError, klipyEnabled, searchGifs, trendingGifs } from './klipy.js';
+import * as giphy from './giphy.js';
 import { parseMediaUrl, previewUrlFor, removeMediaFile, saveAttachment } from './media.js';
 
 export const ID = {
@@ -38,6 +39,13 @@ export const ID = {
   gifNext: 'bday:gif-next',
   gifPick: ['bday:gif-pick-0', 'bday:gif-pick-1', 'bday:gif-pick-2', 'bday:gif-pick-3'],
   modalGif: 'bday:m:gif',
+  giphySearch: 'bday:giphy-search',
+  giphyQuery: 'bday:giphy-query',
+  giphyCategory: 'bday:giphy-category',
+  giphyPrev: 'bday:giphy-prev',
+  giphyNext: 'bday:giphy-next',
+  giphyPick: ['bday:giphy-pick-0', 'bday:giphy-pick-1', 'bday:giphy-pick-2', 'bday:giphy-pick-3'],
+  modalGiphy: 'bday:m:giphy',
   mediaFile: 'bday:media-file',
   mediaLink: 'bday:media-link',
   mediaRemove: 'bday:media-remove',
@@ -217,19 +225,20 @@ const mediaLinkModal = () => new ModalBuilder().setCustomId(ID.modalMediaLink).s
 const mediaMenu = () => screen(
   '### 🖼️ Ajouter un média\nComment veux-tu l\'ajouter ?',
   row(
-    ...(klipyEnabled() ? [button(ID.gifSearch, 'Chercher un GIF', '🔎', ButtonStyle.Primary)] : []),
-    button(ID.mediaGif, 'GIF / sticker Discord', '🎞️', klipyEnabled() ? ButtonStyle.Secondary : ButtonStyle.Primary),
+    ...(klipyEnabled() ? [button(ID.gifSearch, 'GIF KLIPY', '🔎', ButtonStyle.Primary)] : []),
+    ...(giphy.giphyEnabled() ? [button(ID.giphySearch, 'GIF GIPHY', '🔎', ButtonStyle.Primary)] : []),
+    button(ID.mediaGif, 'GIF / sticker Discord', '🎞️', klipyEnabled() || giphy.giphyEnabled() ? ButtonStyle.Secondary : ButtonStyle.Primary),
     button(ID.mediaFile, 'Depuis mon appareil', '📤'),
     button(ID.mediaLink, 'Avec un lien', '🔗'),
   ),
   row(backButton()),
 );
 
-const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitle('Rechercher un GIF').addLabelComponents(
+const gifSearchModal = (provider) => new ModalBuilder().setCustomId(provider.modal).setTitle('Rechercher un GIF').addLabelComponents(
   new LabelBuilder()
-    .setLabel('Rechercher sur KLIPY')
+    .setLabel(`Rechercher sur ${provider.name}`)
     .setTextInputComponent(textInput('query', TextInputStyle.Short)
-      .setRequired(true).setMaxLength(50).setPlaceholder('Search KLIPY')),
+      .setRequired(true).setMaxLength(50).setPlaceholder(`Search ${provider.name}`)),
 );
 
 // Grille façon sélecteur Discord: 4 GIF à la fois (galerie de médias V2), tendances par défaut,
@@ -246,11 +255,17 @@ const GIF_CATEGORIES = [
   { label: 'Hello', emoji: '👋', value: 'hello' },
   { label: 'Merci', emoji: '🙏', value: 'merci' },
 ];
-const gifSearches = new Map(); // `${guild}:${user}` -> {query|null, results, page, exp}
+const providers = {
+  klipy: { name: 'KLIPY', enabled: klipyEnabled, error: KlipyError, search: searchGifs, trending: trendingGifs,
+    open: ID.gifSearch, query: ID.gifQuery, category: ID.gifCategory, prev: ID.gifPrev, next: ID.gifNext, pick: ID.gifPick, modal: ID.modalGif },
+  giphy: { name: 'GIPHY', enabled: giphy.giphyEnabled, error: giphy.GiphyError, search: giphy.searchGifs, trending: giphy.trendingGifs,
+    open: ID.giphySearch, query: ID.giphyQuery, category: ID.giphyCategory, prev: ID.giphyPrev, next: ID.giphyNext, pick: ID.giphyPick, modal: ID.modalGiphy },
+};
+const gifSearches = new Map(); // `${guild}:${user}:${provider}` -> {query|null, results, page, exp}
 
 const gifPageCount = (state) => Math.ceil(state.results.length / GIFS_PER_PAGE);
 
-function gifScreen(state) {
+function gifScreen(state, provider) {
   const start = state.page * GIFS_PER_PAGE;
   const shown = state.results.slice(start, start + GIFS_PER_PAGE);
   const title = state.query ? `« ${state.query} »` : 'GIF recommandés';
@@ -258,26 +273,27 @@ function gifScreen(state) {
   return v2({
     texts: [`### 🎞️ ${title}`],
     before: [
-      row(button(ID.gifQuery, 'Rechercher sur KLIPY…', '🔍')),
-      row(new StringSelectMenuBuilder().setCustomId(ID.gifCategory).setPlaceholder('Catégories: fête, LOL, amour…')
+      row(button(provider.query, `Rechercher sur ${provider.name}…`, '🔍')),
+      row(new StringSelectMenuBuilder().setCustomId(provider.category).setPlaceholder('Catégories: fête, LOL, amour…')
         .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
     ],
     media: shown.map((gif) => gif.preview),
     rows: [
-      row(...shown.map((_, k) => button(ID.gifPick[k], String(k + 1), null, ButtonStyle.Success))),
+      row(...shown.map((_, k) => button(provider.pick[k], String(k + 1), null, ButtonStyle.Success))),
       row(
-        button(ID.gifPrev, 'Précédents', '◀️'),
-        button(ID.gifNext, 'Suivants', '▶️'),
+        button(provider.prev, 'Précédents', '◀️'),
+        button(provider.next, 'Suivants', '▶️'),
         backButton(),
       ),
+      ...(Object.values(providers).filter((p) => p !== provider && p.enabled()).map((p) => row(button(p.open, `Voir ${p.name}`, '🔄')))),
     ],
-    footer: `-# Page ${state.page + 1}/${gifPageCount(state)} · clique sur le numéro du GIF choisi (1 2 en haut, 3 4 en bas) · Powered by KLIPY`,
+    footer: `-# Page ${state.page + 1}/${gifPageCount(state)} · clique sur le numéro du GIF choisi (1 2 en haut, 3 4 en bas) · Powered by ${provider.name}`,
   });
 }
 
-const gifKey = (i) => `${i.guildId}:${i.user.id}`;
-const liveGifSearch = (i) => {
-  const state = gifSearches.get(gifKey(i));
+const gifKey = (i, provider) => `${i.guildId}:${i.user.id}:${provider.name}`;
+const liveGifSearch = (i, provider) => {
+  const state = gifSearches.get(gifKey(i, provider));
   return state && state.exp > Date.now() ? state : null;
 };
 
@@ -418,46 +434,49 @@ async function applyMedia(i, produce) {
   return respondDeferred(i, dash(i, { notice: '✅ Média enregistré.' }));
 }
 
-const gifExpired = () => screen('### ⌛ Cette recherche a expiré\nRelance-la, c\'est rapide.',
-  row(button(ID.gifSearch, 'Chercher un GIF', '🔎', ButtonStyle.Primary), backButton()));
+const gifExpired = (provider) => screen('### ⌛ Cette recherche a expiré\nRelance-la, c\'est rapide.',
+  row(button(provider.open, `Chercher sur ${provider.name}`, '🔎', ButtonStyle.Primary), backButton()));
 
-function gifStep(i, delta) {
-  const state = liveGifSearch(i);
-  if (!state) return respond(i, gifExpired());
+function gifStep(i, provider, delta) {
+  const state = liveGifSearch(i, provider);
+  if (!state) return respond(i, gifExpired(provider));
   const n = gifPageCount(state);
-  state.page = (state.page + delta + n) % n; // boucle aux extrémités
+  state.page = (state.page + delta + n) % n;
   state.exp = Date.now() + SESSION_TTL_MS;
-  return respond(i, gifScreen(state));
+  return respond(i, gifScreen(state, provider));
 }
 
 /** Charge la liste (tendances si `query` est nul), ouvre la grille; erreurs expliquées avec rebond possible. */
-async function showGifGrid(i, query) {
+async function showGifGrid(i, provider, query) {
   await i.deferUpdate();
+  if (!provider.enabled()) {
+    return respondDeferred(i, screen(`### ❌ ${provider.name} n'est pas configuré.`, row(backButton())));
+  }
   let results;
   try {
-    results = query ? await searchGifs(query, i.user.id) : await trendingGifs(i.user.id);
+    results = query ? await provider.search(query, i.user.id) : await provider.trending(i.user.id);
   } catch (err) {
-    if (!(err instanceof KlipyError)) throw err;
-    return respondDeferred(i, screen(`### ❌ ${err.message}\nTu peux réessayer plus tard ou choisir une autre méthode.`,
-      row(button(ID.gifSearch, 'Réessayer', '🔎'), backButton())));
+    if (!(err instanceof provider.error)) throw err;
+    return respondDeferred(i, screen(`### ❌ ${err.message}\nTu peux lancer une autre recherche ou choisir une autre méthode.`,
+      row(button(provider.query, 'Autre recherche', '🔎'), backButton())));
   }
   if (results.length === 0) {
-    return respondDeferred(i, screen(`### 🤷 Aucun GIF pour « ${query} »\nEssaie un autre mot.`,
-      row(button(ID.gifQuery, 'Autre recherche', '🔎', ButtonStyle.Primary), backButton())));
+    return respondDeferred(i, screen(`### 🤷 Aucun GIF ${provider.name}${query ? ` pour « ${query} »` : ''}\nEssaie un autre mot.`,
+      row(button(provider.query, 'Autre recherche', '🔎', ButtonStyle.Primary), backButton())));
   }
   const state = { query, results, page: 0, exp: Date.now() + SESSION_TTL_MS };
-  gifSearches.set(gifKey(i), state);
-  return respondDeferred(i, gifScreen(state));
+  gifSearches.set(gifKey(i, provider), state);
+  return respondDeferred(i, gifScreen(state, provider));
 }
 
-async function pickGif(i, slot) {
-  const state = liveGifSearch(i);
+async function pickGif(i, provider, slot) {
+  const state = liveGifSearch(i, provider);
   const gif = state?.results[state.page * GIFS_PER_PAGE + slot];
-  if (!gif) return respond(i, gifExpired());
+  if (!gif) return respond(i, gifExpired(provider));
   const previous = getBirthday(i.guildId, i.user.id);
   setBirthdayMedia(i.guildId, i.user.id, { path: null, name: null, url: gif.url });
   await removeMediaFile(previous?.media_path);
-  gifSearches.delete(gifKey(i));
+  for (const p of Object.values(providers)) gifSearches.delete(gifKey(i, p));
   return respond(i, dash(i, { notice: '✅ GIF enregistré.' }));
 }
 
@@ -494,13 +513,18 @@ const actions = {
 
   // Média
   [ID.media]: withBirthday((i) => respond(i, mediaMenu())),
-  [ID.gifSearch]: withBirthday((i) => showGifGrid(i, null)),
-  [ID.gifCategory]: (i) => showGifGrid(i, i.values[0] === 'trending' ? null : i.values[0]),
-  [ID.gifQuery]: withBirthday((i) => i.showModal(gifSearchModal())),
-  [ID.modalGif]: (i) => showGifGrid(i, i.fields.getTextInputValue('query').trim()),
-  [ID.gifPrev]: (i) => gifStep(i, -1),
-  [ID.gifNext]: (i) => gifStep(i, 1),
-  ...Object.fromEntries(ID.gifPick.map((id, slot) => [id, (i) => pickGif(i, slot)])),
+  ...Object.fromEntries(Object.values(providers).flatMap((provider) => [
+    [provider.open, withBirthday((i) => {
+      const state = provider.enabled() && liveGifSearch(i, provider);
+      return state ? respond(i, gifScreen(state, provider)) : showGifGrid(i, provider, null);
+    })],
+    [provider.category, withBirthday((i) => showGifGrid(i, provider, i.values[0] === 'trending' ? null : i.values[0]))],
+    [provider.query, withBirthday((i) => i.showModal(gifSearchModal(provider)))],
+    [provider.modal, withBirthday((i) => showGifGrid(i, provider, i.fields.getTextInputValue('query').trim()))],
+    [provider.prev, withBirthday((i) => gifStep(i, provider, -1))],
+    [provider.next, withBirthday((i) => gifStep(i, provider, 1))],
+    ...provider.pick.map((id, slot) => [id, withBirthday((i) => pickGif(i, provider, slot))]),
+  ])),
   [ID.mediaGif]: withBirthday(startGifSession),
   [ID.mediaFile]: withBirthday((i) => i.showModal(mediaFileModal())),
   [ID.mediaLink]: withBirthday((i) => i.showModal(mediaLinkModal())),

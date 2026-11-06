@@ -7,7 +7,7 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 1. Créer l'application sur https://discord.com/developers/applications → Bot → copier le token.
 2. Inviter le bot avec les scopes `bot applications.commands` et les permissions *Voir les salons*, *Envoyer des messages*, *Joindre des fichiers*, *Intégrer des liens*.
 3. `cp .env.example .env`, remplir `DISCORD_TOKEN` et `DISCORD_CLIENT_ID` (`DISCORD_GUILD_ID` pour un déploiement instantané des commandes en dev).
-4. (Optionnel) `KLIPY_API_KEY` dans `.env`: créer une clé depuis le portail indiqué dans la [documentation KLIPY](https://docs.klipy.com/). Sans clé, la recherche de GIF est masquée. La clé en mode test est limitée à 100 requêtes/heure; demander l'accès production dans le portail KLIPY.
+4. (Optionnel) Configurer `KLIPY_API_KEY` et/ou `GIPHY_API_KEY` dans `.env` pour activer chaque fournisseur indépendamment. Créer les clés depuis les portails [KLIPY](https://docs.klipy.com/) et [GIPHY](https://developers.giphy.com/). La clé KLIPY en mode test est limitée à 100 requêtes/heure; demander l'accès production dans le portail KLIPY.
 5. `npm install && npm start` (Node ≥ 22.5; aucune intention privilégiée requise).
 6. Sur le serveur: `/anniversaire-config salon:#anniversaires` puis `/anniversaire-panneau` dans le salon où poster le panneau.
 
@@ -15,12 +15,14 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 
 1. Clic sur **🎂 Mon anniversaire** (panneau) → une fenêtre où il tape sa date librement (`06/11/2000`, `6 novembre`…, année facultative).
 2. Un message **visible par lui seul** apparaît: l'aperçu exact de l'annonce (phrase par défaut incluse) et des boutons **✏️ Modifier mon message**, **🖼️ Ajouter un média**, **📅 Changer la date**, **🗑️ Tout supprimer** (avec confirmation).
-3. **Média**: *🔎 Chercher un GIF* (grille de 4 GIF recommandés dès l'ouverture, ◀ ▶ pour parcourir, 🔎 Rechercher pour filtrer par mot-clé, un clic sur le numéro pour choisir; KLIPY, filtre de contenu `high`), *🎞️ GIF / sticker Discord* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord, le message se met à jour tout seul), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
+3. **Média**: choisir **GIF KLIPY** ou **GIF GIPHY** parmi les fournisseurs configurés (grille de 4 GIF recommandés, ◀ ▶ pour parcourir, recherche ou catégories, clic sur le numéro pour choisir). Le changement de fournisseur conserve la recherche et la page de chacun. Sinon, *🎞️ GIF / sticker Discord* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
 4. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
 
 Discord n'expose ni son sélecteur GIF/stickers ni de calendrier aux bots: d'où le passage par les messages privés pour les GIF (le contenu des MP est lisible sans intention privilégiée) et une saisie libre pour la date (une liste Discord est limitée à 25 choix, il en faudrait 31 pour les jours). Les stickers animés (Lottie) ne sont pas supportés.
 
 L'API KLIPY est appelée côté serveur par le bot, avec l'identifiant Discord comme `customer_id`; les résultats sont conservés 15 minutes en mémoire, sans copie des médias. KLIPY exige une autorisation écrite préalable pour les requêtes côté serveur: contacter developers@klipy.com avant d'activer cette intégration, y compris en test. Voir les [conditions d'intégration](https://docs.klipy.com/integration-requirements).
+
+L'API GIPHY est appelée côté serveur avec un filtre de contenu `g`; les résultats sont conservés 15 minutes en mémoire, sans copie des médias. Chaque fournisseur est indépendant: une erreur ne déclenche pas de bascule automatique. Les médias déjà enregistrés restent inchangés.
 
 Variables du message: `{user}` (mention), `{nom}`, `{age}`, `{date}`.
 
