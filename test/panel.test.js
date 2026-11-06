@@ -470,8 +470,15 @@ test('/anniversaire-panneau: poste le panneau avec ses 2 boutons, refuse si perm
 
   const ok = await run({ commandName: 'anniversaire-panneau', guildId: 'pan', channel: mkChannel(true) });
   assert.equal(sent.length, 1);
-  assert.deepEqual(ids(sent[0]), [ID.open, ID.upcoming]);
+  assert.ok(ids(sent[0]).includes(ID.privacy));
   assert.match(view(ok.last('reply')).content, /Panneau posté/);
+});
+
+test('confidentialité : consultable sans inscription et indique les limites de suppression', async () => {
+  const result = await button(ID.privacy, { guildId: 'privacy' });
+  assert.match(view(result.last('reply')).content, /sauvegardes/);
+  assert.match(view(result.last('reply')).content, /annonces déjà publiées/);
+  assert.equal(db.getBirthday('privacy', 'U'), undefined);
 });
 
 test('config: fuseau inconnu refusé, valeurs affichées', async () => {

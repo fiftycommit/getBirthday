@@ -21,6 +21,8 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 
 Les boutons de retour permettent de revenir aux médias puis au tableau de bord sans enregistrer de changement. Après une erreur de fichier ou de lien, le média précédent est conservé et les deux retours restent accessibles. « Annuler » sur la demande de GIF en message privé désactive cette demande. Les fenêtres Discord se ferment avec « Annuler » ou la croix.
 
+Le bouton **Confidentialité** du panneau explique les données et leurs destinataires. La suppression du profil efface la base active et le média actif, mais pas les messages Discord ni les copies dans les sauvegardes ou les dossiers `pre-restore-*`. La rotation conserve les 30 dernières sauvegardes, sans limite garantie en jours. L'exploitant doit gérer les demandes concernant ces copies et les éventuelles copies externes.
+
 Discord n'expose ni son sélecteur GIF/stickers ni de calendrier aux bots: d'où le passage par les messages privés pour les GIF (le contenu des MP est lisible sans intention privilégiée) et une saisie libre pour la date (une liste Discord est limitée à 25 choix, il en faudrait 31 pour les jours). Les stickers animés (Lottie) ne sont pas supportés.
 
 L'API KLIPY est appelée côté serveur par le bot, avec l'identifiant Discord comme `customer_id`; les résultats sont conservés 15 minutes en mémoire, sans copie des médias. KLIPY exige une autorisation écrite préalable pour les requêtes côté serveur: contacter developers@klipy.com avant d'activer cette intégration, y compris en test. Voir les [conditions d'intégration](https://docs.klipy.com/integration-requirements).

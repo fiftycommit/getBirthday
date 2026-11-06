@@ -20,6 +20,7 @@ import { parseMediaUrl, previewUrlFor, removeMediaFile, saveAttachment } from '.
 export const ID = {
   open: 'bday:open',
   upcoming: 'bday:upcoming',
+  privacy: 'bday:privacy',
   back: 'bday:back',
   finish: 'bday:finish',
   mediaBack: 'bday:media-back',
@@ -78,12 +79,15 @@ export function buildPanel() {
       .setTitle('🎂 Les anniversaires du serveur')
       .setDescription(
         'Enregistre ta date et personnalise ton message avec un GIF, une photo ou une vidéo.\n'
-        + 'Le jour venu, le bot le publiera dans le salon choisi.\n\n'
+        + 'Le jour venu, le bot le publiera dans le salon choisi.\n'
+        + 'Le jour et le mois seront visibles dans les prochains anniversaires ; l’année est facultative.\n\n'
+        + 'Pour savoir quelles données sont conservées, ouvre **Confidentialité**.\n\n'
         + 'Choisis **Mon anniversaire** pour commencer ou modifier tes préférences.',
       )],
     components: [row(
       button(ID.open, 'Mon anniversaire', '🎂', ButtonStyle.Primary),
       button(ID.upcoming, 'Prochains anniversaires', '📅'),
+      button(ID.privacy, 'Confidentialité', '🔒'),
     )],
   };
 }
@@ -176,7 +180,7 @@ function dateModal(current) {
   return new ModalBuilder().setCustomId(ID.modalDate).setTitle('Ton anniversaire').addLabelComponents(
     new LabelBuilder()
       .setLabel('Ta date de naissance')
-      .setDescription('Jour et mois suffisent. L\'année est facultative (elle sert à afficher ton âge).')
+      .setDescription('Jour et mois visibles sur le serveur. Année facultative, utilisée pour ton âge.')
       .setTextInputComponent(input),
   );
 }
@@ -462,6 +466,13 @@ async function pickGif(i, provider, slot) {
 const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) : openFlow(i));
 
 const actions = {
+  [ID.privacy]: (i) => i.reply(ephemeral(screen(
+    '### 🔒 Tes données\n'
+    + '**Enregistrées** : ton identifiant Discord, le serveur, ta date (année facultative), ton message et ton média éventuels, et l’année de la dernière annonce.\n\n'
+    + '**Visibilité** : ton jour et ton mois figurent dans les prochains anniversaires. Le jour J, ton message, ton média et éventuellement ton âge sont publiés dans le salon choisi. Les personnes autorisées à accéder au serveur d’hébergement peuvent accéder aux données ; Discord et les fournisseurs de GIF interviennent selon les fonctions utilisées.\n\n'
+    + '**Durée** : les données restent enregistrées jusqu’à suppression. En quittant le serveur, elles sont supprimées lorsque le bot constate ton départ lors du prochain anniversaire. Les 30 dernières sauvegardes peuvent conserver d’anciennes données ; leur durée dépend de la fréquence des sauvegardes. Des copies manuelles peuvent exister.\n\n'
+    + '**Modifier ou supprimer** : ouvre « Mon anniversaire », puis « Tout supprimer ». Les annonces déjà publiées sur Discord et les sauvegardes ne sont pas effacées par ce bouton. Pour une demande sur ces copies ou tes droits, contacte l’administrateur du serveur, qui pourra joindre le responsable du bot.'
+  ))),
   [ID.open]: openFlow,
   [ID.upcoming]: (i) => i.reply({ content: upcomingText(i.guildId), flags: EPHEMERAL, allowedMentions: NO_MENTIONS }),
   [ID.finish]: withBirthday(async (i) => {
@@ -540,14 +551,14 @@ const actions = {
 
   // Suppression
   [ID.del]: (i) => respond(i, screen(
-    '### 🗑️ Tout supprimer ?\nTa date, ton message et ton média seront effacés. Tu ne seras plus fêté·e.',
+    '### 🗑️ Tout supprimer ?\nTa date, ton message et ton média actifs seront supprimés. Les sauvegardes et annonces déjà publiées ne sont pas effacées automatiquement.',
     row(button(ID.delConfirm, 'Oui, supprimer', '🗑️', ButtonStyle.Danger), button(ID.back, 'Non, garder', '↩️')),
   )),
   async [ID.delConfirm](i) {
     const birthday = getBirthday(i.guildId, i.user.id);
     await removeMediaFile(birthday?.media_path);
     deleteBirthday(i.guildId, i.user.id);
-    return respond(i, screen('🗑️ C\'est fait, tout est supprimé. Tu peux revenir quand tu veux !'));
+    return respond(i, screen('🗑️ Tes données actives sont supprimées. Les sauvegardes et annonces déjà publiées ne sont pas effacées automatiquement.'));
   },
 };
 
