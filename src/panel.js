@@ -14,6 +14,7 @@ import {
   deleteBirthday, getBirthday, getGuildConfig, listBirthdays, setBirthdayDate, setBirthdayMedia,
   setBirthdayMessage,
 } from './db.js';
+import { GiphyError, giphyEnabled, searchGifs } from './giphy.js';
 import { parseMediaUrl, removeMediaFile, saveAttachment } from './media.js';
 
 export const ID = {
@@ -30,6 +31,11 @@ export const ID = {
   // média
   media: 'bday:media',
   mediaGif: 'bday:media-gif',
+  gifSearch: 'bday:gif-search',
+  gifPrev: 'bday:gif-prev',
+  gifNext: 'bday:gif-next',
+  gifPick: 'bday:gif-pick',
+  modalGif: 'bday:m:gif',
   mediaFile: 'bday:media-file',
   mediaLink: 'bday:media-link',
   mediaRemove: 'bday:media-remove',
@@ -122,12 +128,12 @@ const screen = (content, ...rows) => ({ content, files: [], components: rows, al
 /** Répond sur place si on clique depuis un message privé, sinon crée un nouveau message privé. */
 async function respond(i, payload) {
   const fromDashboard = i.isFromMessage?.() && i.message.flags.has(EPHEMERAL);
-  if (fromDashboard) return i.update({ ...payload, attachments: [] });
+  if (fromDashboard) return i.update({ embeds: [], ...payload, attachments: [] });
   return i.reply({ ...payload, flags: EPHEMERAL });
 }
 
 /** Variante après un `deferUpdate` (opérations longues: téléchargement de média). */
-const respondDeferred = (i, payload) => i.editReply({ ...payload, attachments: [] });
+const respondDeferred = (i, payload) => i.editReply({ embeds: [], ...payload, attachments: [] });
 
 const nameOf = (i) => i.member?.displayName ?? i.user.displayName ?? i.user.username;
 const dash = (i, extra = {}) =>
@@ -183,12 +189,50 @@ const mediaLinkModal = () => new ModalBuilder().setCustomId(ID.modalMediaLink).s
 const mediaMenu = () => screen(
   '### 🖼️ Ajouter un média\nComment veux-tu l\'ajouter ?',
   row(
-    button(ID.mediaGif, 'Choisir un GIF', '🎞️', ButtonStyle.Primary),
+    ...(giphyEnabled() ? [button(ID.gifSearch, 'Chercher un GIF', '🔎', ButtonStyle.Primary)] : []),
+    button(ID.mediaGif, 'GIF / sticker Discord', '🎞️', giphyEnabled() ? ButtonStyle.Secondary : ButtonStyle.Primary),
     button(ID.mediaFile, 'Depuis mon appareil', '📤'),
     button(ID.mediaLink, 'Avec un lien', '🔗'),
   ),
   row(backButton()),
 );
+
+const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitle('Chercher un GIF').addLabelComponents(
+  new LabelBuilder()
+    .setLabel('Que cherches-tu ?')
+    .setDescription('Un mot ou deux, par exemple: fête, gâteau, champagne…')
+    .setTextInputComponent(textInput('query', TextInputStyle.Short).setRequired(true).setMaxLength(50)),
+);
+
+// Résultats de recherche Giphy: gardés en mémoire le temps du choix (un redémarrage = nouvelle recherche).
+const gifSearches = new Map(); // `${guild}:${user}` -> {query, results, index, exp}
+
+function gifScreen(state, notice = null) {
+  const gif = state.results[state.index];
+  const embed = new EmbedBuilder()
+    .setColor(0xf5a623)
+    .setTitle(`🔎 « ${state.query} » — ${state.index + 1}/${state.results.length}`)
+    .setImage(gif.preview)
+    .setFooter({ text: 'Powered by GIPHY' });
+  return {
+    ...screen(
+      notice ?? 'Parcours les résultats avec ◀ ▶ puis valide celui que tu veux.',
+      row(
+        button(ID.gifPrev, 'Précédent', '◀️'),
+        button(ID.gifPick, 'Celui-là !', '✅', ButtonStyle.Success),
+        button(ID.gifNext, 'Suivant', '▶️'),
+      ),
+      row(button(ID.gifSearch, 'Autre recherche', '🔎'), backButton()),
+    ),
+    embeds: [embed],
+  };
+}
+
+const gifKey = (i) => `${i.guildId}:${i.user.id}`;
+const liveGifSearch = (i) => {
+  const state = gifSearches.get(gifKey(i));
+  return state && state.exp > Date.now() ? state : null;
+};
 
 // Le sélecteur GIF/stickers de Discord n'existe que dans la zone de message, pas dans les fenêtres de
 // saisie. On le fait donc utiliser en message privé avec le bot (le contenu des MP est lisible sans
@@ -325,6 +369,18 @@ async function applyMedia(i, produce) {
   return respondDeferred(i, dash(i, { notice: '✅ Média enregistré.' }));
 }
 
+const gifExpired = () => screen('### ⌛ Cette recherche a expiré\nRelance-la, c\'est rapide.',
+  row(button(ID.gifSearch, 'Chercher un GIF', '🔎', ButtonStyle.Primary), backButton()));
+
+function gifStep(i, delta) {
+  const state = liveGifSearch(i);
+  if (!state) return respond(i, gifExpired());
+  const n = state.results.length;
+  state.index = (state.index + delta + n) % n; // boucle aux extrémités
+  state.exp = Date.now() + SESSION_TTL_MS;
+  return respond(i, gifScreen(state));
+}
+
 const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) : openFlow(i));
 
 const actions = {
@@ -358,6 +414,37 @@ const actions = {
 
   // Média
   [ID.media]: withBirthday((i) => respond(i, mediaMenu())),
+  [ID.gifSearch]: withBirthday((i) => i.showModal(gifSearchModal())),
+  async [ID.modalGif](i) {
+    await i.deferUpdate();
+    const query = i.fields.getTextInputValue('query').trim();
+    let results;
+    try {
+      results = await searchGifs(query);
+    } catch (err) {
+      if (!(err instanceof GiphyError)) throw err;
+      return respondDeferred(i, screen(`### ❌ ${err.message}\nTu peux réessayer plus tard ou choisir une autre méthode.`,
+        row(button(ID.gifSearch, 'Réessayer', '🔎'), backButton())));
+    }
+    if (results.length === 0) {
+      return respondDeferred(i, screen(`### 🤷 Aucun GIF pour « ${query} »\nEssaie un autre mot.`,
+        row(button(ID.gifSearch, 'Autre recherche', '🔎', ButtonStyle.Primary), backButton())));
+    }
+    const state = { query, results, index: 0, exp: Date.now() + SESSION_TTL_MS };
+    gifSearches.set(gifKey(i), state);
+    return respondDeferred(i, gifScreen(state));
+  },
+  [ID.gifPrev]: (i) => gifStep(i, -1),
+  [ID.gifNext]: (i) => gifStep(i, 1),
+  async [ID.gifPick](i) {
+    const state = liveGifSearch(i);
+    if (!state) return respond(i, gifExpired());
+    const previous = getBirthday(i.guildId, i.user.id);
+    setBirthdayMedia(i.guildId, i.user.id, { path: null, name: null, url: state.results[state.index].url });
+    await removeMediaFile(previous?.media_path);
+    gifSearches.delete(gifKey(i));
+    return respond(i, dash(i, { notice: '✅ GIF enregistré.' }));
+  },
   [ID.mediaGif]: withBirthday(startGifSession),
   [ID.mediaFile]: withBirthday((i) => i.showModal(mediaFileModal())),
   [ID.mediaLink]: withBirthday((i) => i.showModal(mediaLinkModal())),

@@ -6,6 +6,7 @@ import { Collection } from 'discord.js';
 import { fakeInteraction, useTempDataDir } from './helpers.js';
 
 useTempDataDir();
+process.env.GIPHY_API_KEY = 'test-key';
 const db = await import('../src/db.js');
 const { handleInteraction } = await import('../src/commands.js');
 const { ID, handleDirectMessage } = await import('../src/panel.js');
@@ -89,7 +90,7 @@ test('aperçu: l\'âge est celui de la prochaine occurrence, variables rendues',
 test('média: le menu propose GIF, appareil, lien; chaque choix ouvre la bonne fenêtre', async () => {
   db.setBirthdayDate('m1', 'U', 6, 11, null);
   const menu = await button(ID.media, { guildId: 'm1', ...eph });
-  assert.deepEqual(ids(menu.last('update')), [ID.mediaGif, ID.mediaFile, ID.mediaLink, ID.back]);
+  assert.deepEqual(ids(menu.last('update')), [ID.gifSearch, ID.mediaGif, ID.mediaFile, ID.mediaLink, ID.back]);
   assert.equal((await button(ID.mediaFile, { guildId: 'm1', ...eph })).last('showModal').data.custom_id, ID.modalMediaFile);
   assert.equal((await button(ID.mediaLink, { guildId: 'm1', ...eph })).last('showModal').data.custom_id, ID.modalMediaLink);
 });
@@ -129,6 +130,72 @@ test('média par fichier: type non supporté ou trop lourd refusé sans rien cha
   const big = await modal(ID.modalMediaFile, {}, { guildId: 'm4', ...eph, files: [{ url: 'u', contentType: 'video/mp4', size: 50 * 1024 * 1024 }] });
   assert.match(big.last('followUp').content, /trop lourd/);
   assert.equal(db.getBirthday('m4', 'U').media_path, null);
+});
+
+// ── GIF: recherche Giphy ──
+
+const gifJson = (n) => ({ ok: true, status: 200, json: async () => ({ data: Array.from({ length: n }, (_, k) => ({
+  id: `g${k}`, url: `https://giphy.com/gifs/party-g${k}`, title: `t${k}`, images: { fixed_height: { url: `https://media.giphy.com/g${k}/200.gif` } },
+})) }) });
+const withFetch = async (impl, fn) => {
+  const m = mock.method(globalThis, 'fetch', impl);
+  try { return await fn(m); } finally { m.mock.restore(); }
+};
+const embedOf = (payload) => payload.embeds[0].data;
+
+test('GIF: le menu média propose la recherche seulement si la clé Giphy est configurée', async () => {
+  db.setBirthdayDate('s0', 'U', 6, 11, null);
+  assert.ok(ids((await button(ID.media, { guildId: 's0', ...eph })).last('update')).includes(ID.gifSearch));
+  delete process.env.GIPHY_API_KEY;
+  assert.ok(!ids((await button(ID.media, { guildId: 's0', ...eph })).last('update')).includes(ID.gifSearch));
+  process.env.GIPHY_API_KEY = 'test-key';
+});
+
+test('GIF: recherche → aperçu, ◀ ▶ en boucle, « Celui-là » enregistre le lien et revient au tableau de bord', async () => {
+  db.setBirthdayDate('s1', 'U', 6, 11, null);
+  const g = { guildId: 's1', ...eph };
+  await withFetch(async () => gifJson(3), async (fetchMock) => {
+    assert.equal((await button(ID.gifSearch, g)).last('showModal').data.custom_id, ID.modalGif);
+
+    const found = await modal(ID.modalGif, { query: 'Fête  Surprise' }, g);
+    assert.deepEqual(found.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
+    assert.equal(embedOf(found.last('editReply')).image.url, 'https://media.giphy.com/g0/200.gif');
+    assert.match(embedOf(found.last('editReply')).title, /1\/3/);
+    assert.equal(embedOf(found.last('editReply')).footer.text, 'Powered by GIPHY');
+    assert.match(fetchMock.mock.calls[0].arguments[0], /rating=g/);
+
+    assert.match(embedOf((await button(ID.gifNext, g)).last('update')).title, /2\/3/);
+    assert.match(embedOf((await button(ID.gifPrev, g)).last('update')).title, /1\/3/);
+    assert.match(embedOf((await button(ID.gifPrev, g)).last('update')).title, /3\/3/); // boucle
+
+    const pick = await button(ID.gifPick, g);
+    assert.equal(db.getBirthday('s1', 'U').media_url, 'https://giphy.com/gifs/party-g2');
+    assert.deepEqual(pick.last('update').embeds, []); // l'aperçu GIF disparaît du tableau de bord
+    assert.match(pick.last('update').content, /> https:\/\/giphy\.com\/gifs\/party-g2/);
+
+    // même recherche (casse/espaces différents): servie par le cache, pas de nouvel appel API
+    await modal(ID.modalGif, { query: 'fête surprise' }, g);
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+});
+
+test('GIF: aucun résultat, quota dépassé, Giphy injoignable → messages clairs, rien d\'enregistré', async () => {
+  db.setBirthdayDate('s2', 'U', 6, 11, null);
+  const g = { guildId: 's2', ...eph };
+  const none = await withFetch(async () => gifJson(0), () => modal(ID.modalGif, { query: 'zzzaucun' }, g));
+  assert.match(none.last('editReply').content, /Aucun GIF/);
+  const quota = await withFetch(async () => ({ ok: false, status: 429 }), () => modal(ID.modalGif, { query: 'quota' }, g));
+  assert.match(quota.last('editReply').content, /Trop de recherches/);
+  const down = await withFetch(async () => { throw new Error('network'); }, () => modal(ID.modalGif, { query: 'panne' }, g));
+  assert.match(down.last('editReply').content, /ne répond pas/);
+  assert.equal(db.getBirthday('s2', 'U').media_url, null);
+});
+
+test('GIF: choisir sans recherche active (expirée / redémarrage) → écran « expirée »', async () => {
+  db.setBirthdayDate('s3', 'U', 6, 11, null);
+  const f = await button(ID.gifPick, { guildId: 's3', ...eph });
+  assert.match(f.last('update').content, /expiré/);
+  assert.equal(db.getBirthday('s3', 'U').media_url, null);
 });
 
 // ── GIF via messages privés ──
