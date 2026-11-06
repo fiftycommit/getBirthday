@@ -281,7 +281,8 @@ function gifScreen(state, provider) {
     ],
     media: shown.map((gif) => gif.preview),
     rows: [
-      row(...shown.map((_, k) => button(provider.pick[k], String(k + 1), null, ButtonStyle.Success))),
+      row(...shown.slice(0, 2).map((_, k) => button(provider.pick[k], String(k + 1), null, ButtonStyle.Success))),
+      ...(shown.length > 2 ? [row(...shown.slice(2, 4).map((_, k) => button(provider.pick[k + 2], String(k + 3), null, ButtonStyle.Success)))] : []),
       row(
         button(provider.prev, 'Précédents', '◀️'),
         button(provider.next, 'Suivants', '▶️'),
