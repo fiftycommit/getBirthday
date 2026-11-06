@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
 # Exécuté sur le serveur comme *commande forcée* de la clé SSH de déploiement (authorized_keys):
 #   restrict,command="/home/ubuntu/getBirthday/scripts/deploy.sh" ssh-ed25519 AAAA… getbirthday-deploy
-# La CI envoie `deploy <sha>` + l'image Docker (tar gzip) sur stdin. Rien d'autre n'est exécutable avec cette clé.
+# La CI envoie `deploy <sha>` et, sur la 1re ligne de stdin, un token GHCR éphémère (celui du job, valide le temps du job).
+# L'image est tirée du registre: seules les couches modifiées sont téléchargées (en pratique: la couche `src`, quelques Ko).
 set -euo pipefail
+
+IMAGE_REPO=ghcr.io/fiftycommit/getbirthday
 
 main() {
   cd "$(dirname "$0")/.."
-  local action sha
+  local action sha token
   read -r action sha <<<"${SSH_ORIGINAL_COMMAND:-}"
   [[ $action == deploy && $sha =~ ^[0-9a-f]{40}$ ]] || { echo "commande refusée" >&2; exit 2; }
+  IFS= read -r token
+  [[ -n $token ]] || { echo "token manquant" >&2; exit 2; }
 
   exec 9>.deploy.lock
   flock -n 9 || { echo "déploiement déjà en cours" >&2; exit 3; }
 
-  echo "▶ Réception de l'image $sha"
-  gzip -dc | docker load >/dev/null
-  docker image inspect "getbirthday:$sha" >/dev/null
+  echo "▶ Pull $IMAGE_REPO:$sha"
+  # Config Docker jetable: le token n'est jamais écrit dans ~/.docker.
+  local cfg; cfg=$(mktemp -d)
+  printf '%s' "$token" | DOCKER_CONFIG=$cfg docker login ghcr.io -u github-actions --password-stdin >/dev/null
+  DOCKER_CONFIG=$cfg docker pull -q "$IMAGE_REPO:$sha" >/dev/null
+  rm -rf "$cfg"
 
   echo "▶ Mise à jour de la config (compose, scripts)"
   git fetch -q origin master
@@ -32,7 +40,7 @@ main() {
   if docker image inspect getbirthday:current >/dev/null 2>&1; then
     docker tag getbirthday:current getbirthday:previous
   fi
-  docker tag "getbirthday:$sha" getbirthday:current
+  docker tag "$IMAGE_REPO:$sha" getbirthday:current
 
   echo "▶ Démarrage"
   docker compose up -d --no-build --remove-orphans
@@ -56,10 +64,12 @@ main() {
   fi
 
   echo "$sha" > .deployed_sha
-  echo "▶ Nettoyage des anciennes images"
-  local tag
-  for tag in $(docker images getbirthday --format '{{.Tag}}'); do
-    [[ $tag =~ ^[0-9a-f]{40}$ && $tag != "$sha" && $tag != "$previous_sha" ]] && docker rmi "getbirthday:$tag" >/dev/null || true
+  echo "▶ Nettoyage: on garde la version courante et la précédente (rollback)"
+  local ref
+  for ref in $(docker images --format '{{.Repository}}:{{.Tag}}'); do
+    if [[ $ref =~ ^($IMAGE_REPO|getbirthday):[0-9a-f]{40}$ && $ref != *":$sha" && $ref != *":$previous_sha" ]]; then
+      docker rmi "$ref" >/dev/null || true
+    fi
   done
   docker image prune -f >/dev/null
   echo "✔ Déployé $sha"

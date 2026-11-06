@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Couche dépendances: reconstruite uniquement si package*.json change.
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts
 
 COPY src ./src
 

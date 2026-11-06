@@ -1,4 +1,6 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, renameSync, rmSync, statSync,
+} from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, MEDIA_DIR, snapshotDb } from './db.js';
 
@@ -12,9 +14,24 @@ const list = () =>
     : [];
 
 /**
- * Sauvegarde cohérente: snapshot SQLite + copie des médias, écrite dans un dossier
- * temporaire puis renommée (un backup n'est jamais visible à moitié écrit).
- * Rotation: on garde les KEEP plus récents.
+ * Les médias sont des liens physiques: un fichier média n'est jamais modifié en place (chaque upload
+ * crée un nouveau nom), donc 30 sauvegardes ne coûtent pas 30x l'espace disque même avec des Go de médias.
+ * Repli sur une vraie copie si le lien est impossible (autre système de fichiers).
+ */
+function linkMedia(src, dst) {
+  mkdirSync(dst, { recursive: true });
+  for (const name of readdirSync(src)) {
+    try {
+      linkSync(path.join(src, name), path.join(dst, name));
+    } catch {
+      copyFileSync(path.join(src, name), path.join(dst, name));
+    }
+  }
+}
+
+/**
+ * Sauvegarde cohérente: snapshot SQLite + médias, écrite dans un dossier temporaire puis
+ * renommée (un backup n'est jamais visible à moitié écrit). Rotation: on garde les KEEP plus récents.
  */
 export function runBackup(now = new Date()) {
   const stamp = now.toISOString().replaceAll(':', '').replace(/\.\d+Z$/, 'Z');
@@ -24,7 +41,7 @@ export function runBackup(now = new Date()) {
   mkdirSync(tmp, { recursive: true });
   try {
     snapshotDb(path.join(tmp, 'birthdays.db'));
-    cpSync(MEDIA_DIR, path.join(tmp, 'media'), { recursive: true });
+    linkMedia(MEDIA_DIR, path.join(tmp, 'media'));
     renameSync(tmp, final);
   } catch (err) {
     rmSync(tmp, { recursive: true, force: true });

@@ -28,3 +28,14 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 - 29 février: fêté le 28 les années non bissextiles.
 - Seul le membre fêté peut être mentionné par un texte perso (`@everyone` neutralisé).
 - Un membre qui quitte le serveur voit ses données purgées à son prochain anniversaire.
+
+## Déploiement (CI/CD)
+
+Push sur `master` → tests → build arm64 (cache de couches) → push GHCR → le serveur tire l'image par SSH (clé à commande forcée `scripts/deploy.sh`), sauvegarde, redémarre, attend le healthcheck, rollback automatique si le bot n'est pas sain.
+Seules les couches modifiées transitent: un changement de code n'envoie que la couche `src`; les dépendances ne sont renvoyées que si `package-lock.json` change.
+
+Secrets GitHub requis: `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_HOST`, `DEPLOY_USER`.
+
+## Sauvegardes
+
+Snapshot SQLite + médias (liens physiques, coût disque quasi nul) dans `data/backups/`: 1 par jour, 1 avant chaque déploiement, 30 conservées. `scripts/restore.sh [nom|latest]` restaure (l'ancien état est conservé dans `data/pre-restore-*`).
