@@ -64,7 +64,7 @@ export function buildPanel() {
         + '**Clique sur le bouton, je te guide.**',
       )],
     components: [row(
-      button(ID.open, 'Ajouter mon anniversaire', '🎂', ButtonStyle.Primary),
+      button(ID.open, 'Mon anniversaire', '🎂', ButtonStyle.Primary),
       button(ID.upcoming, 'Prochains anniversaires', '📅'),
     )],
   };

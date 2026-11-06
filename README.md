@@ -12,7 +12,7 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 
 ## Parcours membre
 
-1. Clic sur **🎂 Ajouter mon anniversaire** (panneau) → une fenêtre où il tape sa date librement (`06/11/2000`, `6 novembre`…, année facultative).
+1. Clic sur **🎂 Mon anniversaire** (panneau) → une fenêtre où il tape sa date librement (`06/11/2000`, `6 novembre`…, année facultative).
 2. Un message **visible par lui seul** apparaît: l'aperçu exact de l'annonce (phrase par défaut incluse) et des boutons **✏️ Modifier mon message**, **🖼️ Ajouter un média**, **📅 Changer la date**, **🗑️ Tout supprimer** (avec confirmation).
 3. **Média**: *🎞️ Choisir un GIF* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord, le message se met à jour tout seul), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
 4. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
