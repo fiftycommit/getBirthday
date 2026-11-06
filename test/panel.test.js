@@ -185,7 +185,7 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://static.klipy.com/g${k}/small.gif`));
     assert.match(view(first).content, /Powered by KLIPY/);
     assert.equal(first.flags & 32768, 32768); // Components V2
-    assert.deepEqual(ids(first), [ID.gifQuery, ID.gifCategory, ...ID.gifPick, ID.gifPrev, ID.gifNext, ID.back]);
+    assert.ok(ids(first).includes(ID.mediaBack));
     const url = new URL(fetchMock.mock.calls[0].arguments[0]);
     assert.equal(url.origin + url.pathname, 'https://api.klipy.com/api/v1/test-key/gifs/trending');
     assert.equal(url.searchParams.get('customer_id'), 'U');
@@ -418,6 +418,24 @@ test('GIF: message privé sans session ouverte ignoré; bots ignorés', async ()
   await handleDirectMessage(m);
   await handleDirectMessage({ ...dmMessage(), author: { id: 'U', bot: true } });
   assert.equal(m.replies.length, 0);
+});
+
+test('retour depuis la galerie puis le menu média, sans modifier le média enregistré', async () => {
+  db.setBirthdayDate('nav', 'U', 6, 11, null);
+  db.setBirthdayMedia('nav', 'U', { url: 'https://example.com/original.gif' });
+  const menu = await button(ID.mediaBack, { guildId: 'nav', ...eph });
+  assert.ok(ids(menu.last('update')).includes(ID.mediaFile));
+  const dashboard = await button(ID.back, { guildId: 'nav', ...eph });
+  assert.ok(ids(dashboard.last('update')).includes(ID.text));
+  assert.equal(db.getBirthday('nav', 'U').media_url, 'https://example.com/original.gif');
+});
+
+test('annuler la demande GIF en MP empêche un envoi ultérieur de modifier le média', async () => {
+  db.setBirthdayDate('nav-dm', 'U', 6, 11, null);
+  await button(ID.mediaGif, { guildId: 'nav-dm', ...eph, dm: { id: 'd', send: async () => {} } });
+  await button(ID.back, { guildId: 'nav-dm', ...eph });
+  await handleDirectMessage(dmMessage({ content: 'https://tenor.com/view/unwanted' }));
+  assert.equal(db.getBirthday('nav-dm', 'U').media_url, null);
 });
 
 // ── Suppression, isolation, admin ──

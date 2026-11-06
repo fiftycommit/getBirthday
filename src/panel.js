@@ -22,6 +22,7 @@ export const ID = {
   open: 'bday:open',
   upcoming: 'bday:upcoming',
   back: 'bday:back',
+  mediaBack: 'bday:media-back',
   // date
   date: 'bday:date',
   modalDate: 'bday:m:date',
@@ -283,7 +284,7 @@ function gifScreen(state, provider) {
       row(
         button(provider.prev, 'Précédents', '◀️'),
         button(provider.next, 'Suivants', '▶️'),
-        backButton(),
+        button(ID.mediaBack, 'Retour aux médias', '↩️'),
       ),
       ...(Object.values(providers).filter((p) => p !== provider && p.enabled()).map((p) => row(button(p.open, `Voir ${p.name}`, '🔄')))),
     ],
@@ -411,7 +412,10 @@ export async function openFlow(i) {
   return i.reply(ephemeral(dash(i)));
 }
 
-const retryDate = (message) => screen(message, row(button(ID.date, 'Réessayer', '📅', ButtonStyle.Primary)));
+const retryDate = (message, hasBirthday) => screen(message, row(
+  button(ID.date, 'Réessayer', '📅', ButtonStyle.Primary),
+  ...(hasBirthday ? [backButton()] : []),
+));
 
 async function saveDate(i, { day, month, year }) {
   const existed = Boolean(getBirthday(i.guildId, i.user.id));
@@ -435,7 +439,7 @@ async function applyMedia(i, produce) {
 }
 
 const gifExpired = (provider) => screen('### ⌛ Cette recherche a expiré\nRelance-la, c\'est rapide.',
-  row(button(provider.open, `Chercher sur ${provider.name}`, '🔎', ButtonStyle.Primary), backButton()));
+  row(button(provider.open, `Chercher sur ${provider.name}`, '🔎', ButtonStyle.Primary), button(ID.mediaBack, 'Retour aux médias', '↩️')));
 
 function gifStep(i, provider, delta) {
   const state = liveGifSearch(i, provider);
@@ -450,7 +454,7 @@ function gifStep(i, provider, delta) {
 async function showGifGrid(i, provider, query) {
   await i.deferUpdate();
   if (!provider.enabled()) {
-    return respondDeferred(i, screen(`### ❌ ${provider.name} n'est pas configuré.`, row(backButton())));
+    return respondDeferred(i, screen(`### ❌ ${provider.name} n'est pas configuré.`, row(button(ID.mediaBack, 'Retour aux médias', '↩️'))));
   }
   let results;
   try {
@@ -458,11 +462,11 @@ async function showGifGrid(i, provider, query) {
   } catch (err) {
     if (!(err instanceof provider.error)) throw err;
     return respondDeferred(i, screen(`### ❌ ${err.message}\nTu peux lancer une autre recherche ou choisir une autre méthode.`,
-      row(button(provider.query, 'Autre recherche', '🔎'), backButton())));
+      row(button(provider.query, 'Autre recherche', '🔎'), button(ID.mediaBack, 'Retour aux médias', '↩️'))));
   }
   if (results.length === 0) {
     return respondDeferred(i, screen(`### 🤷 Aucun GIF ${provider.name}${query ? ` pour « ${query} »` : ''}\nEssaie un autre mot.`,
-      row(button(provider.query, 'Autre recherche', '🔎', ButtonStyle.Primary), backButton())));
+      row(button(provider.query, 'Autre recherche', '🔎', ButtonStyle.Primary), button(ID.mediaBack, 'Retour aux médias', '↩️'))));
   }
   const state = { query, results, page: 0, exp: Date.now() + SESSION_TTL_MS };
   gifSearches.set(gifKey(i, provider), state);
@@ -485,7 +489,14 @@ const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) :
 const actions = {
   [ID.open]: openFlow,
   [ID.upcoming]: (i) => i.reply({ content: upcomingText(i.guildId), flags: EPHEMERAL, allowedMentions: NO_MENTIONS }),
-  [ID.back]: withBirthday((i) => respond(i, dash(i))),
+  [ID.back]: withBirthday((i) => {
+    gifSessions.delete(i.user.id);
+    return respond(i, dash(i));
+  }),
+  [ID.mediaBack]: withBirthday((i) => {
+    gifSessions.delete(i.user.id);
+    return respond(i, mediaMenu());
+  }),
 
   // Date
   [ID.date]: (i) => i.showModal(dateModal(getBirthday(i.guildId, i.user.id))),
@@ -493,7 +504,7 @@ const actions = {
     const parsed = parseBirthdayInput(i.fields.getTextInputValue('date'));
     const error = parsed ? validateBirthday(parsed, new Date().getFullYear()) : 'Je n\'ai pas compris cette date.';
     if (error) {
-      return i.reply(ephemeral(retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`)));
+      return i.reply(ephemeral(retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`, Boolean(getBirthday(i.guildId, i.user.id)))));
     }
     return saveDate(i, parsed);
   },

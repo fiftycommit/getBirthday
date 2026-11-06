@@ -18,6 +18,8 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 3. **Média**: choisir **GIF KLIPY** ou **GIF GIPHY** parmi les fournisseurs configurés (grille de 4 GIF recommandés, ◀ ▶ pour parcourir, recherche ou catégories, clic sur le numéro pour choisir). Le changement de fournisseur conserve la recherche et la page de chacun. Sinon, *🎞️ GIF / sticker Discord* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
 4. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
 
+Les boutons de retour permettent de revenir aux médias puis au tableau de bord sans enregistrer de changement. Revenir au tableau de bord annule aussi la demande de GIF en message privé. Les fenêtres Discord se ferment avec « Annuler » ou la croix.
+
 Discord n'expose ni son sélecteur GIF/stickers ni de calendrier aux bots: d'où le passage par les messages privés pour les GIF (le contenu des MP est lisible sans intention privilégiée) et une saisie libre pour la date (une liste Discord est limitée à 25 choix, il en faudrait 31 pour les jours). Les stickers animés (Lottie) ne sont pas supportés.
 
 L'API KLIPY est appelée côté serveur par le bot, avec l'identifiant Discord comme `customer_id`; les résultats sont conservés 15 minutes en mémoire, sans copie des médias. KLIPY exige une autorisation écrite préalable pour les requêtes côté serveur: contacter developers@klipy.com avant d'activer cette intégration, y compris en test. Voir les [conditions d'intégration](https://docs.klipy.com/integration-requirements).
