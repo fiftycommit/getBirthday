@@ -11,7 +11,7 @@ import { commandDefinitions } from './commands.js';
 import { deleteBirthday, getBirthday, setBirthdayDate, setBirthdayMessage } from './db.js';
 import './scheduler.js';
 
-assert.deepEqual(commandDefinitions.map((c) => c.name), ['anniversaire', 'anniversaire-config']);
+assert.deepEqual(commandDefinitions.map((c) => c.name), ['anniversaire', 'anniversaires', 'anniversaire-panneau', 'anniversaire-config']);
 
 setBirthdayDate('smoke', 'u1', 29, 2, null);
 setBirthdayMessage('smoke', 'u1', 'Salut {nom} {user} @everyone');

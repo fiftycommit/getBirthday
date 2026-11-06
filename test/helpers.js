@@ -1,6 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Collection, MessageFlags } from 'discord.js';
 
 /** Doit être appelé AVANT tout import de src/db.js (le chemin est lu à l'import). */
 export function useTempDataDir() {
@@ -9,24 +10,42 @@ export function useTempDataDir() {
   return dir;
 }
 
-export function fakeInteraction({ guildId = 'G', userId = 'U', command = 'anniversaire', sub, opts = {} }) {
-  const out = { replies: [] };
+/**
+ * Fausse interaction Discord. `kind`: 'command' | 'button' | 'modal'.
+ * `fromEphemeral`: le bouton/la fenêtre vient d'un message privé (tableau de bord) — sinon du panneau public.
+ * `calls` garde l'ordre des appels (reply/update/showModal/…) pour vérifier le comportement observable.
+ */
+export function fakeInteraction({
+  kind = 'command', guildId = 'G', userId = 'U', commandName = 'anniversaire', customId,
+  opts = {}, fields = {}, files = null, fromEphemeral = false, channel = null,
+}) {
+  const calls = [];
+  const rec = (type) => async (payload) => { calls.push({ type, payload }); };
   const get = (k) => opts[k] ?? null;
   const interaction = {
-    isChatInputCommand: () => true,
     guildId,
-    commandName: command,
+    commandName,
+    customId,
     user: { id: userId, username: 'user', displayName: 'User' },
     member: { displayName: 'User' },
+    channel,
+    guild: { members: { me: {} } },
     deferred: false,
     replied: false,
-    options: {
-      getSubcommand: () => sub,
-      getInteger: get, getString: get, getAttachment: get, getUser: get, getChannel: get, getBoolean: get,
+    isChatInputCommand: () => kind === 'command',
+    isButton: () => kind === 'button',
+    isModalSubmit: () => kind === 'modal',
+    isFromMessage: () => kind !== 'command' && fromEphemeral !== null,
+    message: { flags: { has: (f) => fromEphemeral && f === MessageFlags.Ephemeral } },
+    options: { getChannel: get, getInteger: get, getString: get, getBoolean: get },
+    fields: {
+      getTextInputValue: (k) => fields[k] ?? '',
+      getUploadedFiles: () => (files ? new Collection(files.map((f, n) => [String(n), f])) : null),
     },
-    reply: async (x) => { out.replies.push(x); },
-    deferReply: async () => {},
-    editReply: async (x) => { out.replies.push(x); },
+    reply: rec('reply'), update: rec('update'), showModal: rec('showModal'),
+    deferUpdate: rec('deferUpdate'), editReply: rec('editReply'), followUp: rec('followUp'),
   };
-  return { interaction, out, text: () => out.replies.map((r) => (typeof r === 'string' ? r : r.content)).join('\n') };
+  const last = (type) => calls.filter((c) => c.type === type).at(-1)?.payload;
+  const text = () => calls.map((c) => c.payload?.content ?? '').join('\n');
+  return { interaction, calls, last, text };
 }

@@ -15,6 +15,7 @@ export function buildAnnouncement({ birthday, config, name, year }) {
     birthday,
   });
   if (birthday.media_url) content += `\n${birthday.media_url}`;
+  content = content.slice(0, 2000); // limite Discord (les variables peuvent gonfler le texte)
 
   const payload = { content, allowedMentions: { users: [birthday.user_id] } };
   if (birthday.media_path) {
