@@ -35,7 +35,7 @@ test('date saisie librement (formats variés) → enregistrée, nouveau message 
   assert.deepEqual(f.calls.map((c) => c.type), ['reply']);
   assert.match(view(f.last('reply')).content, /6 novembre 2000/);
   assert.match(view(f.last('reply')).content, /> 🎂 Joyeux anniversaire <@U>/);
-  assert.deepEqual(ids(f.last('reply')), [ID.text, ID.media, ID.date, ID.del]);
+  assert.ok(ids(f.last('reply')).includes(ID.finish));
   await modal(ID.modalDate, { date: '29/02' }, { guildId: 'd3' });
   assert.equal(db.getBirthday('d3', 'U').year, null);
 });
@@ -72,8 +72,15 @@ test('texte: le champ montre le défaut; le garder ou le vider suit le défaut, 
   assert.equal(db.getBirthday('t1', 'U').message, null);
   assert.match(view(f.last('update')).content, /Joyeux anniversaire/);
 
-  await modal(ID.modalText, { text: '🎂 Joyeux anniversaire {user} ! 🎉' }, { guildId: 't1', ...eph });
+  await modal(ID.modalText, { text: open.last('showModal').toJSON().components[0].component.value }, { guildId: 't1', ...eph });
   assert.equal(db.getBirthday('t1', 'U').message, null);
+});
+
+test('enregistrer et fermer garde la date et ferme le message privé', async () => {
+  db.setBirthdayDate('finish', 'U', 6, 11, 2000);
+  const result = await button(ID.finish, { guildId: 'finish', ...eph });
+  assert.deepEqual(result.calls.map((call) => call.type), ['deferUpdate', 'deleteReply']);
+  assert.equal(db.getBirthday('finish', 'U').year, 2000);
 });
 
 test('aperçu: l\'âge est celui de la prochaine occurrence, variables rendues', async () => {

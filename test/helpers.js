@@ -46,7 +46,7 @@ export function fakeInteraction({
       getUploadedFiles: () => (files ? new Collection(files.map((f, n) => [String(n), f])) : null),
     },
     reply: rec('reply'), update: rec('update'), showModal: rec('showModal'),
-    deferUpdate: rec('deferUpdate'), editReply: rec('editReply'), followUp: rec('followUp'),
+    deferUpdate: rec('deferUpdate'), editReply: rec('editReply'), followUp: rec('followUp'), deleteReply: rec('deleteReply'),
   };
   const last = (type) => calls.filter((c) => c.type === type).at(-1)?.payload;
   const text = () => calls.map((c) => c.payload?.content ?? '').join('\n');

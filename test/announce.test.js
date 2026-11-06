@@ -12,7 +12,8 @@ test('priorité du texte: perso > défaut du serveur > défaut du bot', () => {
   const name = 'Max';
   assert.equal(buildAnnouncement({ birthday: { ...base, message: 'perso' }, config: { default_message: 'srv' }, name, year: 2026 }).content, 'perso');
   assert.equal(buildAnnouncement({ birthday: base, config: { default_message: 'srv' }, name, year: 2026 }).content, 'srv');
-  assert.equal(buildAnnouncement({ birthday: base, config: null, name, year: 2026 }).content, DEFAULT_MESSAGE.replace('{user}', '<@42>'));
+  assert.match(buildAnnouncement({ birthday: base, config: null, name, year: 2026 }).content, /26 ans/);
+  assert.equal(buildAnnouncement({ birthday: { ...base, year: null }, config: null, name, year: 2026 }).content, DEFAULT_MESSAGE.replace('{user}', '<@42>'));
 });
 
 test('seul le membre fêté peut être mentionné (@everyone neutralisé)', () => {

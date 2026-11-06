@@ -5,9 +5,9 @@ import {
   LabelBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextDisplayBuilder,
   TextInputBuilder, TextInputStyle,
 } from 'discord.js';
-import { buildAnnouncement } from './announce.js';
+import { buildAnnouncement, defaultBirthdayMessage } from './announce.js';
 import {
-  DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, daysUntil, formatDate, nextBirthdayYear, nowIn,
+  MAX_MESSAGE_LENGTH, daysUntil, formatDate, nextBirthdayYear, nowIn,
   parseBirthdayInput, validateBirthday,
 } from './dates.js';
 import {
@@ -22,6 +22,7 @@ export const ID = {
   open: 'bday:open',
   upcoming: 'bday:upcoming',
   back: 'bday:back',
+  finish: 'bday:finish',
   mediaBack: 'bday:media-back',
   // date
   date: 'bday:date',
@@ -92,9 +93,6 @@ export function buildPanel() {
 
 // ───────────────────────── Tableau de bord privé ─────────────────────────
 
-function effectiveDefault(config) {
-  return config?.default_message ?? DEFAULT_MESSAGE;
-}
 
 /**
  * Message éphémère: en-tête + aperçu fidèle (même fonction que celle qui poste l'annonce) + actions.
@@ -134,6 +132,7 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
         button(ID.text, 'Message', '✏️', ButtonStyle.Primary),
         button(ID.media, hasMedia ? 'Modifier le média' : 'Ajouter un média', '🖼️'),
         button(ID.date, 'Date', '📅'),
+        button(ID.finish, 'Enregistrer et fermer', '✅', ButtonStyle.Success),
       ),
       extra,
     ],
@@ -204,7 +203,7 @@ function textModal(current, config) {
       .setLabel('Message d\'anniversaire')
       .setDescription('{user} = ta mention · {nom} = ton pseudo · {age} = ton âge · {date} = ta date')
       .setTextInputComponent(textInput('text', TextInputStyle.Paragraph)
-        .setRequired(true).setMaxLength(MAX_MESSAGE_LENGTH).setValue(current.message ?? effectiveDefault(config))),
+        .setRequired(true).setMaxLength(MAX_MESSAGE_LENGTH).setValue(current.message ?? defaultBirthdayMessage(current, config))),
   );
 }
 
@@ -492,6 +491,12 @@ const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) :
 const actions = {
   [ID.open]: openFlow,
   [ID.upcoming]: (i) => i.reply({ content: upcomingText(i.guildId), flags: EPHEMERAL, allowedMentions: NO_MENTIONS }),
+  [ID.finish]: withBirthday(async (i) => {
+    gifSessions.delete(i.user.id);
+    for (const provider of Object.values(providers)) gifSearches.delete(gifKey(i, provider));
+    await i.deferUpdate();
+    await i.deleteReply();
+  }),
   [ID.back]: withBirthday((i) => {
     gifSessions.delete(i.user.id);
     return respond(i, dash(i));
@@ -521,7 +526,7 @@ const actions = {
   async [ID.modalText](i) {
     const text = i.fields.getTextInputValue('text').trim();
     // Texte vide ou identique au défaut: on suit le défaut (il évolue avec la config du serveur).
-    setBirthdayMessage(i.guildId, i.user.id, !text || text === effectiveDefault(getGuildConfig(i.guildId)) ? null : text);
+    setBirthdayMessage(i.guildId, i.user.id, !text || text === defaultBirthdayMessage(getBirthday(i.guildId, i.user.id), getGuildConfig(i.guildId)) ? null : text);
     return respond(i, dash(i, { notice: '✅ Message enregistré.' }));
   },
 

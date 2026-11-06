@@ -16,7 +16,8 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 1. Clic sur **🎂 Mon anniversaire** (panneau) → une fenêtre où il tape sa date librement (`06/11/2000`, `6 novembre`…, année facultative).
 2. Un message **visible par lui seul** apparaît avec la date, l'aperçu de l'annonce et les boutons **✏️ Message**, **🖼️ Ajouter un média**, **📅 Date**, **🗑️ Tout supprimer** (avec confirmation).
 3. **Média**: choisir **GIF KLIPY** ou **GIF GIPHY** parmi les fournisseurs configurés (grille de 4 GIF recommandés, ◀ ▶ pour parcourir, recherche ou catégories, clic sur le numéro pour choisir). Le changement de fournisseur conserve la recherche et la page de chacun. Sinon, *🎞️ GIF / sticker Discord* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
-4. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
+4. Chaque modification est enregistrée immédiatement. **Enregistrer et fermer** ferme le message privé ; le panneau permet de revenir modifier ses choix.
+5. Si l'année est renseignée, le message par défaut du bot indique l'âge. Un message personnalisé ou celui du serveur peut utiliser `{age}`.
 
 Les boutons de retour permettent de revenir aux médias puis au tableau de bord sans enregistrer de changement. Après une erreur de fichier ou de lien, le média précédent est conservé et les deux retours restent accessibles. « Annuler » sur la demande de GIF en message privé désactive cette demande. Les fenêtres Discord se ferment avec « Annuler » ou la croix.
 
