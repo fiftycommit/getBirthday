@@ -90,3 +90,27 @@ export function nextBirthdayYear(b, today) {
   const d = new Date(Date.UTC(today.year, today.month - 1, today.day + daysUntil(b, today)));
   return d.getUTCFullYear();
 }
+
+const strip = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/**
+ * Lecture tolérante d'une date saisie à la main: « 06/11/2000 », « 6-11 », « 6.11.2000 »,
+ * « 2000-11-06 », « 6 novembre 2000 », « 6 nov ». Retourne null si illisible; la validité
+ * calendaire est vérifiée ensuite par validateBirthday.
+ */
+export function parseBirthdayInput(raw) {
+  const text = strip(raw.toLowerCase().trim()).replace(/\s+/g, ' ');
+
+  let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return { day: Number(m[3]), month: Number(m[2]), year: Number(m[1]) };
+
+  m = text.match(/^(\d{1,2}) ?[/.\- ] ?(\d{1,2})(?: ?[/.\- ] ?(\d{4}))?$/);
+  if (m) return { day: Number(m[1]), month: Number(m[2]), year: m[3] ? Number(m[3]) : null };
+
+  m = text.match(/^(\d{1,2})(?:er)? ([a-z]{3,})\.?(?: (\d{4}))?$/);
+  if (m) {
+    const idx = MONTH_NAMES.findIndex((n) => strip(n).startsWith(m[2]));
+    if (idx >= 0) return { day: Number(m[1]), month: idx + 1, year: m[3] ? Number(m[3]) : null };
+  }
+  return null;
+}

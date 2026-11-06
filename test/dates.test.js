@@ -48,3 +48,19 @@ test('nextBirthdayYear: année de la prochaine occurrence (aujourd\'hui compris)
   assert.equal(nextBirthdayYear({ day: 5, month: 11 }, today), 2027);
   assert.equal(nextBirthdayYear({ day: 29, month: 2 }, today), 2027);
 });
+
+test('parseBirthdayInput: formats courants, mois en lettres, illisible → null', async () => {
+  const { parseBirthdayInput } = await import('../src/dates.js');
+  const cases = {
+    '06/11/2000': { day: 6, month: 11, year: 2000 },
+    '6-11': { day: 6, month: 11, year: null },
+    '6.11.2000': { day: 6, month: 11, year: 2000 },
+    '2000-11-06': { day: 6, month: 11, year: 2000 },
+    '6 novembre 2000': { day: 6, month: 11, year: 2000 },
+    '1er mars': { day: 1, month: 3, year: null },
+    '12 Décembre': { day: 12, month: 12, year: null },
+    '6 sept.': { day: 6, month: 9, year: null },
+  };
+  for (const [input, expected] of Object.entries(cases)) assert.deepEqual(parseBirthdayInput(input), expected, input);
+  for (const bad of ['', 'blabla', '6', '6/11/20', '6 xyz']) assert.equal(parseBirthdayInput(bad), null, bad);
+});

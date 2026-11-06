@@ -2,13 +2,13 @@
 // (message éphémère) qui se met à jour sur place et montre toujours l'aperçu exact de l'annonce.
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, FileUploadBuilder, LabelBuilder,
-  MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextInputBuilder,
+  MessageFlags, ModalBuilder, StickerFormatType, TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
 import { buildAnnouncement } from './announce.js';
 import {
-  DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, MONTH_NAMES, daysUntil, formatDate, nextBirthdayYear, nowIn,
-  validateBirthday,
+  DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, daysUntil, formatDate, nextBirthdayYear, nowIn,
+  parseBirthdayInput, validateBirthday,
 } from './dates.js';
 import {
   deleteBirthday, getBirthday, getGuildConfig, listBirthdays, setBirthdayDate, setBirthdayMedia,
@@ -137,26 +137,19 @@ const dash = (i, extra = {}) =>
 
 const textInput = (id, style) => new TextInputBuilder().setCustomId(id).setStyle(style);
 
-/**
- * Une seule fenêtre, un seul envoi: liste du mois (12 choix), jour tapé (une liste ne peut pas dépasser
- * 25 choix, il en faudrait 31), année facultative. Sans état serveur.
- */
 function dateModal(current) {
-  const month = new StringSelectMenuBuilder().setCustomId('month').setPlaceholder('Choisis le mois')
-    .setRequired(true)
-    .addOptions(MONTH_NAMES.map((n, k) => ({
-      label: n[0].toUpperCase() + n.slice(1), value: String(k + 1), default: current?.month === k + 1,
-    })));
-  const day = textInput('day', TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(2).setPlaceholder('ex : 6');
-  const year = textInput('year', TextInputStyle.Short).setRequired(false).setMinLength(0).setMaxLength(4).setPlaceholder('ex : 2000');
-  if (current?.day) day.setValue(String(current.day));
-  if (current?.year) year.setValue(String(current.year));
+  const input = textInput('date', TextInputStyle.Short)
+    .setRequired(true).setMaxLength(30).setPlaceholder('ex : 06/11/2000 ou 6 novembre');
+  if (current) {
+    const dd = String(current.day).padStart(2, '0');
+    const mm = String(current.month).padStart(2, '0');
+    input.setValue(`${dd}/${mm}${current.year ? `/${current.year}` : ''}`);
+  }
   return new ModalBuilder().setCustomId(ID.modalDate).setTitle('Ton anniversaire').addLabelComponents(
-    new LabelBuilder().setLabel('Mois').setStringSelectMenuComponent(month),
-    new LabelBuilder().setLabel('Jour').setTextInputComponent(day),
-    new LabelBuilder().setLabel('Année de naissance (facultatif)')
-      .setDescription('Sert uniquement à afficher ton âge. Laisse vide pour ne pas la donner.')
-      .setTextInputComponent(year),
+    new LabelBuilder()
+      .setLabel('Ta date de naissance')
+      .setDescription('Jour et mois suffisent. L\'année est facultative (elle sert à afficher ton âge).')
+      .setTextInputComponent(input),
   );
 }
 
@@ -342,17 +335,12 @@ const actions = {
   // Date
   [ID.date]: (i) => i.showModal(dateModal(getBirthday(i.guildId, i.user.id))),
   async [ID.modalDate](i) {
-    const month = Number(i.fields.getStringSelectValues('month')[0]);
-    const dayRaw = i.fields.getTextInputValue('day').trim();
-    const yearRaw = i.fields.getTextInputValue('year').trim();
-    const day = /^\d{1,2}$/.test(dayRaw) ? Number(dayRaw) : NaN;
-    const year = yearRaw ? (/^\d{4}$/.test(yearRaw) ? Number(yearRaw) : NaN) : null;
-
-    const error = Number.isNaN(day) ? 'Le jour doit être un nombre (ex: 6).'
-      : Number.isNaN(year) ? 'L\'année doit avoir 4 chiffres (ex: 2000) ou rester vide.'
-        : validateBirthday({ day, month, year }, new Date().getFullYear());
-    if (error) return i.reply({ ...retryDate(`❌ ${error}`), flags: EPHEMERAL });
-    return saveDate(i, { day, month, year });
+    const parsed = parseBirthdayInput(i.fields.getTextInputValue('date'));
+    const error = parsed ? validateBirthday(parsed, new Date().getFullYear()) : 'Je n\'ai pas compris cette date.';
+    if (error) {
+      return i.reply({ ...retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`), flags: EPHEMERAL });
+    }
+    return saveDate(i, parsed);
   },
 
   // Texte
