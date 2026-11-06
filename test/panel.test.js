@@ -1,9 +1,9 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Collection } from 'discord.js';
-import { fakeInteraction, useTempDataDir } from './helpers.js';
+import { fakeInteraction, useTempDataDir, view } from './helpers.js';
 
 useTempDataDir();
 process.env.GIPHY_API_KEY = 'test-key';
@@ -18,7 +18,7 @@ const run = async (args) => {
 };
 const button = (customId, extra = {}) => run({ kind: 'button', customId, ...extra });
 const modal = (customId, fields, extra = {}) => run({ kind: 'modal', customId, fields, ...extra });
-const ids = (payload) => payload.components.flatMap((r) => r.components.map((c) => c.data.custom_id).filter(Boolean));
+const ids = (payload) => view(payload).ids;
 const eph = { fromEphemeral: true };
 
 // ── Date ──
@@ -32,8 +32,8 @@ test('nouveau membre: le bouton du panneau ouvre la saisie de date, rien n\'est 
 test('date saisie librement (formats variés) → enregistrée, nouveau message privé avec aperçu et actions', async () => {
   const f = await modal(ID.modalDate, { date: '6 novembre 2000' }, { guildId: 'd2' });
   assert.deepEqual(f.calls.map((c) => c.type), ['reply']);
-  assert.match(f.last('reply').content, /6 novembre 2000/);
-  assert.match(f.last('reply').content, /> 🎂 Joyeux anniversaire <@U>/);
+  assert.match(view(f.last('reply')).content, /6 novembre 2000/);
+  assert.match(view(f.last('reply')).content, /> 🎂 Joyeux anniversaire <@U>/);
   assert.deepEqual(ids(f.last('reply')), [ID.text, ID.media, ID.date, ID.del]);
   await modal(ID.modalDate, { date: '29/02' }, { guildId: 'd3' });
   assert.equal(db.getBirthday('d3', 'U').year, null);
@@ -42,7 +42,7 @@ test('date saisie librement (formats variés) → enregistrée, nouveau message 
 test('date invalide ou illisible: refus clair, bouton Réessayer, rien d\'enregistré', async () => {
   for (const date of ['31/02', 'blabla', '29/02/2001']) {
     const f = await modal(ID.modalDate, { date }, { guildId: 'd4' });
-    assert.match(f.last('reply').content, /❌/);
+    assert.match(view(f.last('reply')).content, /❌/);
     assert.deepEqual(ids(f.last('reply')), [ID.date]);
   }
   assert.equal(db.getBirthday('d4', 'U'), undefined);
@@ -69,7 +69,7 @@ test('texte: le champ montre le défaut; le garder ou le vider suit le défaut, 
 
   const f = await button(ID.textReset, { guildId: 't1', ...eph });
   assert.equal(db.getBirthday('t1', 'U').message, null);
-  assert.match(f.last('update').content, /Joyeux anniversaire/);
+  assert.match(view(f.last('update')).content, /Joyeux anniversaire/);
 
   await modal(ID.modalText, { text: '🎂 Joyeux anniversaire {user} ! 🎉' }, { guildId: 't1', ...eph });
   assert.equal(db.getBirthday('t1', 'U').message, null);
@@ -82,7 +82,31 @@ test('aperçu: l\'âge est celui de la prochaine occurrence, variables rendues',
   const f = await button(ID.open, { guildId: 't2' });
   const now = new Date();
   const expected = now.getMonth() === 0 && now.getDate() === 1 ? 20 : 21;
-  assert.match(f.last('reply').content, new RegExp(`> User aura ${expected} ans`));
+  assert.match(view(f.last('reply')).content, new RegExp(`> User aura ${expected} ans`));
+});
+
+// ── Aperçu V2 ──
+
+test('tableau de bord en Components V2: aperçu animé du GIF Giphy, du fichier joint, rien pour un lien opaque', async () => {
+  db.setBirthdayDate('v1', 'U', 6, 11, null);
+  const open = async () => (await button(ID.open, { guildId: 'v1' })).last('reply');
+
+  const plain = await open();
+  assert.equal(plain.flags, 32768 | 64); // V2 + éphémère
+  assert.deepEqual(view(plain).media, []);
+
+  db.setBirthdayMedia('v1', 'U', { path: null, name: null, url: 'https://giphy.com/gifs/party-time-AbC123' });
+  assert.deepEqual(view(await open()).media, ['https://media.giphy.com/media/AbC123/giphy.gif']);
+
+  db.setBirthdayMedia('v1', 'U', { path: null, name: null, url: 'https://www.youtube.com/watch?v=x' });
+  assert.deepEqual(view(await open()).media, []);
+  assert.match(view(await open()).content, /youtube\.com/); // le lien reste visible dans l'aperçu du message
+
+  writeFileSync(path.join(db.MEDIA_DIR, 'v1.gif'), 'gif');
+  db.setBirthdayMedia('v1', 'U', { path: 'v1.gif', name: 'anniversaire.gif', url: null });
+  const withFile = await open();
+  assert.deepEqual(view(withFile).media, ['attachment://anniversaire.gif']);
+  assert.equal(withFile.files.length, 1);
 });
 
 // ── Média ──
@@ -98,12 +122,12 @@ test('média: le menu propose GIF, appareil, lien; chaque choix ouvre la bonne f
 test('média par lien: http(s) uniquement, affiché dans l\'aperçu', async () => {
   db.setBirthdayDate('m2', 'U', 6, 11, null);
   const bad = await modal(ID.modalMediaLink, { url: 'javascript:alert(1)' }, { guildId: 'm2', ...eph });
-  assert.match(bad.last('followUp').content, /invalide/);
+  assert.match(view(bad.last('followUp')).content, /invalide/);
   assert.equal(db.getBirthday('m2', 'U').media_url, null);
 
   const ok = await modal(ID.modalMediaLink, { url: 'https://tenor.com/x' }, { guildId: 'm2', ...eph });
   assert.deepEqual(ok.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
-  assert.match(ok.last('editReply').content, /> https:\/\/tenor\.com\/x/);
+  assert.match(view(ok.last('editReply')).content, /> https:\/\/tenor\.com\/x/);
   assert.ok(ids(ok.last('editReply')).includes(ID.mediaRemove));
 });
 
@@ -126,9 +150,9 @@ test('média par fichier: copié localement; le remplacer supprime l\'ancien fic
 test('média par fichier: type non supporté ou trop lourd refusé sans rien changer', async () => {
   db.setBirthdayDate('m4', 'U', 6, 11, null);
   const pdf = await modal(ID.modalMediaFile, {}, { guildId: 'm4', ...eph, files: [{ url: 'u', contentType: 'application/pdf', size: 1 }] });
-  assert.match(pdf.last('followUp').content, /Format non supporté/);
+  assert.match(view(pdf.last('followUp')).content, /Format non supporté/);
   const big = await modal(ID.modalMediaFile, {}, { guildId: 'm4', ...eph, files: [{ url: 'u', contentType: 'video/mp4', size: 50 * 1024 * 1024 }] });
-  assert.match(big.last('followUp').content, /trop lourd/);
+  assert.match(view(big.last('followUp')).content, /trop lourd/);
   assert.equal(db.getBirthday('m4', 'U').media_path, null);
 });
 
@@ -141,7 +165,6 @@ const withFetch = async (impl, fn) => {
   const m = mock.method(globalThis, 'fetch', impl);
   try { return await fn(m); } finally { m.mock.restore(); }
 };
-const embedOf = (payload) => payload.embeds[0].data;
 
 test('GIF: le menu média propose la recherche seulement si la clé Giphy est configurée', async () => {
   db.setBirthdayDate('s0', 'U', 6, 11, null);
@@ -158,21 +181,21 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     const open = await button(ID.gifSearch, g);
     assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
     const first = open.last('editReply');
-    assert.equal(first.embeds.length, 4);
-    assert.deepEqual(first.embeds.map((e) => e.data.image.url), [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/100.gif`));
-    assert.match(first.embeds[0].data.title, /recommandés — page 1\/2/);
-    assert.equal(first.embeds[0].data.footer.text, 'Powered by GIPHY');
+    assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/100.gif`));
+    assert.match(view(first).content, /recommandés — page 1\/2/);
+    assert.match(view(first).content, /Powered by GIPHY/);
+    assert.equal(first.flags & 32768, 32768); // Components V2
     assert.deepEqual(ids(first), [...ID.gifPick, ID.gifCategory, ID.gifPrev, ID.gifNext, ID.gifQuery, ID.back]);
     assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/trending\?.*rating=g/);
 
-    assert.match((await button(ID.gifNext, g)).last('update').embeds[0].data.title, /page 2\/2/);
-    assert.match((await button(ID.gifNext, g)).last('update').embeds[0].data.title, /page 1\/2/); // boucle
+    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /page 2\/2/);
+    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /page 1\/2/); // boucle
     await button(ID.gifPrev, g); // page 2
 
     const pick = await button(ID.gifPick[1], g); // 2e GIF de la page 2 → g5
     assert.equal(db.getBirthday('s1', 'U').media_url, 'https://giphy.com/gifs/party-g5');
-    assert.deepEqual(pick.last('update').embeds, []); // la grille disparaît du tableau de bord
-    assert.match(pick.last('update').content, /> https:\/\/giphy\.com\/gifs\/party-g5/);
+    assert.deepEqual(view(pick.last('update')).media, ['https://media.giphy.com/media/g5/giphy.gif']); // aperçu animé du GIF choisi
+    assert.match(view(pick.last('update')).content, /> https:\/\/giphy\.com\/gifs\/party-g5/);
 
     await button(ID.gifSearch, g); // tendances servies par le cache: pas de nouvel appel
     assert.equal(fetchMock.mock.callCount(), 1);
@@ -185,12 +208,12 @@ test('GIF: la recherche remplace les recommandés (mot normalisé, mis en cache)
   await withFetch(async () => gifJson(5), async (fetchMock) => {
     assert.equal((await button(ID.gifQuery, g)).last('showModal').data.custom_id, ID.modalGif);
     const found = await modal(ID.modalGif, { query: 'Fête  Surprise' }, g);
-    assert.match(found.last('editReply').embeds[0].data.title, /« fête surprise »|« Fête  Surprise »/);
-    assert.equal(found.last('editReply').embeds.length, 4);
+    assert.match(view(found.last('editReply')).content, /« (fête surprise|Fête  Surprise) »/);
+    assert.equal(view(found.last('editReply')).media.length, 4);
     assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/search\?.*q=f%C3%AAte\+surprise/);
 
     const lastPage = await button(ID.gifNext, g); // 5 résultats → page 2 n'a qu'un GIF
-    assert.equal(lastPage.last('update').embeds.length, 1);
+    assert.equal(view(lastPage.last('update')).media.length, 1);
     assert.deepEqual(ids(lastPage.last('update')).slice(0, 2), [ID.gifPick[0], ID.gifCategory]);
 
     await modal(ID.modalGif, { query: 'fête surprise' }, g);
@@ -204,10 +227,10 @@ test('GIF: les catégories (tuiles façon Discord) lancent la bonne recherche, �
   await withFetch(async () => gifJson(6), async (fetchMock) => {
     await button(ID.gifSearch, g);
     const cat = await run({ kind: 'select', customId: ID.gifCategory, values: ['joyeux anniversaire'], ...g });
-    assert.match(cat.last('editReply').embeds[0].data.title, /« joyeux anniversaire »/);
+    assert.match(view(cat.last('editReply')).content, /« joyeux anniversaire »/);
     assert.match(fetchMock.mock.calls.at(-1).arguments[0], /gifs\/search\?.*q=joyeux\+anniversaire/);
     const top = await run({ kind: 'select', customId: ID.gifCategory, values: ['trending'], ...g });
-    assert.match(top.last('editReply').embeds[0].data.title, /recommandés/);
+    assert.match(view(top.last('editReply')).content, /recommandés/);
   });
 });
 
@@ -215,18 +238,18 @@ test('GIF: aucun résultat, quota dépassé, Giphy injoignable → messages clai
   db.setBirthdayDate('s2', 'U', 6, 11, null);
   const g = { guildId: 's2', ...eph };
   const none = await withFetch(async () => gifJson(0), () => modal(ID.modalGif, { query: 'zzzaucun' }, g));
-  assert.match(none.last('editReply').content, /Aucun GIF/);
+  assert.match(view(none.last('editReply')).content, /Aucun GIF/);
   const quota = await withFetch(async () => ({ ok: false, status: 429 }), () => modal(ID.modalGif, { query: 'quota' }, g));
-  assert.match(quota.last('editReply').content, /Trop de recherches/);
+  assert.match(view(quota.last('editReply')).content, /Trop de recherches/);
   const down = await withFetch(async () => { throw new Error('network'); }, () => modal(ID.modalGif, { query: 'panne' }, g));
-  assert.match(down.last('editReply').content, /ne répond pas/);
+  assert.match(view(down.last('editReply')).content, /ne répond pas/);
   assert.equal(db.getBirthday('s2', 'U').media_url, null);
 });
 
 test('GIF: choisir sans recherche active (expirée / redémarrage) → écran « expirée »', async () => {
   db.setBirthdayDate('s3', 'U', 6, 11, null);
   const f = await button(ID.gifPick[0], { guildId: 's3', ...eph });
-  assert.match(f.last('update').content, /expiré/);
+  assert.match(view(f.last('update')).content, /expiré/);
   assert.equal(db.getBirthday('s3', 'U').media_url, null);
 });
 
@@ -250,7 +273,7 @@ test('GIF: ouvre un MP, puis le GIF envoyé est enregistré et le tableau de bor
   const sentDm = [];
   const start = await button(ID.mediaGif, { guildId: 'g1', ...eph, dm: { id: 'dm42', send: async (x) => { sentDm.push(x); } } });
   assert.match(sentDm[0], /bouton \*\*GIF\*\*/);
-  assert.match(start.last('update').components[0].components[0].data.url, /channels\/@me\/dm42/);
+  assert.match(view(start.last('update')).links[0], /channels\/@me\/dm42/);
 
   const nothing = dmMessage({ content: 'salut' });
   await handleDirectMessage(nothing);
@@ -261,7 +284,7 @@ test('GIF: ouvre un MP, puis le GIF envoyé est enregistré et le tableau de bor
   await handleDirectMessage(gif);
   assert.equal(db.getBirthday('g1', 'U').media_url, 'https://tenor.com/view/party-gif-123');
   assert.match(gif.replies[0], /enregistré/);
-  assert.match(start.last('editReply').content, /> https:\/\/tenor\.com\/view\/party-gif-123/); // message du serveur mis à jour
+  assert.match(view(start.last('editReply')).content, /> https:\/\/tenor\.com\/view\/party-gif-123/); // message du serveur mis à jour
 
   const again = dmMessage({ content: 'https://tenor.com/view/other-1' }); // session terminée: ignoré
   await handleDirectMessage(again);
@@ -280,7 +303,7 @@ test('GIF: sticker image accepté, sticker animé (Lottie) refusé, MP fermés e
   assert.equal(db.getBirthday('g2', 'U').media_url, 'https://media.discordapp.net/stickers/1.png');
 
   const closed = await button(ID.mediaGif, { guildId: 'g2', ...eph, dm: Object.assign(new Error('Cannot send'), { code: 50007 }) });
-  assert.match(closed.last('update').content, /messages privés/);
+  assert.match(view(closed.last('update')).content, /messages privés/);
 });
 
 test('GIF: message privé sans session ouverte ignoré; bots ignorés', async () => {
@@ -314,7 +337,7 @@ test('les données restent isolées par serveur', async () => {
 test('prochains anniversaires: liste sans ping', async () => {
   db.setBirthdayDate('x2', 'u1', 6, 11, null);
   const f = await button(ID.upcoming, { guildId: 'x2' });
-  assert.match(f.last('reply').content, /<@u1>/);
+  assert.match(view(f.last('reply')).content, /<@u1>/);
   assert.deepEqual(f.last('reply').allowedMentions, { parse: [] });
 });
 
@@ -323,13 +346,13 @@ test('/anniversaire-panneau: poste le panneau avec ses 2 boutons, refuse si perm
   const mkChannel = (allowed) => ({ permissionsFor: () => ({ has: () => allowed }), send: async (p) => { sent.push(p); } });
 
   const bad = await run({ commandName: 'anniversaire-panneau', channel: mkChannel(false) });
-  assert.match(bad.last('reply').content, /Permissions manquantes/);
+  assert.match(view(bad.last('reply')).content, /Permissions manquantes/);
   assert.equal(sent.length, 0);
 
   const ok = await run({ commandName: 'anniversaire-panneau', guildId: 'pan', channel: mkChannel(true) });
   assert.equal(sent.length, 1);
   assert.deepEqual(ids(sent[0]), [ID.open, ID.upcoming]);
-  assert.match(ok.last('reply').content, /Panneau posté/);
+  assert.match(view(ok.last('reply')).content, /Panneau posté/);
 });
 
 test('config: fuseau inconnu refusé, valeurs affichées', async () => {

@@ -52,3 +52,22 @@ export function fakeInteraction({
   const text = () => calls.map((c) => c.payload?.content ?? '').join('\n');
   return { interaction, calls, last, text };
 }
+
+/**
+ * Aplatit un message (V1 ou « Components V2 ») en ce que voit l'utilisateur:
+ * `content` (textes), `ids` (boutons/listes cliquables), `media` (URLs de la galerie), `links` (boutons lien).
+ */
+export function view(payload) {
+  const out = { content: payload?.content ?? '', ids: [], media: [], links: [] };
+  const texts = payload?.content ? [payload.content] : [];
+  const walk = (c) => {
+    const j = c.toJSON ? c.toJSON() : c;
+    if (j.type === 10) texts.push(j.content);
+    if (j.type === 12) j.items.forEach((it) => out.media.push(it.media.url));
+    if (j.type === 2 || j.type === 3) (j.custom_id ? out.ids.push(j.custom_id) : out.links.push(j.url));
+    (j.components ?? []).forEach(walk);
+  };
+  (payload?.components ?? []).forEach(walk);
+  out.content = texts.join('\n');
+  return out;
+}

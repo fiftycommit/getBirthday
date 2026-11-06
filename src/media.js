@@ -46,3 +46,14 @@ export function parseMediaUrl(raw) {
   }
   return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
 }
+
+/**
+ * URL d'image directe pour l'aperçu du tableau de bord (les messages « Components V2 » ne déplient pas
+ * les liens). Page Giphy → son GIF; lien d'image direct → lui-même; autre lien (YouTube…) → null.
+ */
+export function previewUrlFor(url) {
+  if (!url) return null;
+  const giphy = url.match(/^https:\/\/giphy\.com\/gifs\/(?:[^/?#]*-)?([A-Za-z0-9]+)\/?(?:[?#].*)?$/);
+  if (giphy) return `https://media.giphy.com/media/${giphy[1]}/giphy.gif`;
+  return /^https?:\/\/\S+\.(?:gif|png|jpe?g|webp)(?:\?\S*)?$/i.test(url) ? url : null;
+}

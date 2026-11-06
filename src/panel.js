@@ -1,9 +1,9 @@
 // Interface « zéro commande »: un panneau public avec un bouton, puis un tableau de bord privé
 // (message éphémère) qui se met à jour sur place et montre toujours l'aperçu exact de l'annonce.
 import {
-  ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, FileUploadBuilder, LabelBuilder,
-  MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextInputBuilder,
-  TextInputStyle,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, EmbedBuilder, FileUploadBuilder,
+  LabelBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextDisplayBuilder,
+  TextInputBuilder, TextInputStyle,
 } from 'discord.js';
 import { buildAnnouncement } from './announce.js';
 import {
@@ -15,7 +15,7 @@ import {
   setBirthdayMessage,
 } from './db.js';
 import { GiphyError, giphyEnabled, searchGifs, trendingGifs } from './giphy.js';
-import { parseMediaUrl, removeMediaFile, saveAttachment } from './media.js';
+import { parseMediaUrl, previewUrlFor, removeMediaFile, saveAttachment } from './media.js';
 
 export const ID = {
   open: 'bday:open',
@@ -49,6 +49,7 @@ export const ID = {
 };
 
 const EPHEMERAL = MessageFlags.Ephemeral;
+const V2 = MessageFlags.IsComponentsV2;
 const NO_MENTIONS = { parse: [] };
 const DEFAULT_TZ = 'Europe/Paris';
 const MAX_URL_LENGTH = 400;
@@ -105,15 +106,18 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
   if (hasMedia) extra.addComponents(button(ID.mediaRemove, 'Retirer le média', '🚫'));
   extra.addComponents(button(ID.del, 'Tout supprimer', '🗑️', ButtonStyle.Danger));
 
-  return {
-    content: [
+  const files = announcement.files ?? [];
+  const preview = files.length ? `attachment://${files[0].name}` : previewUrlFor(b.media_url);
+  return v2({
+    texts: [
       notice,
       `### 🎂 Ton anniversaire: **${formatDate(b)}**`,
       `-# Aperçu du message posté le jour J ${where}`,
       quoted,
-    ].filter(Boolean).join('\n'),
-    files: announcement.files ?? [],
-    components: [
+    ].filter(Boolean),
+    media: preview ? [preview] : [],
+    files,
+    rows: [
       row(
         button(ID.text, 'Modifier mon message', '✏️', ButtonStyle.Primary),
         button(ID.media, hasMedia ? 'Changer le média' : 'Ajouter un média', '🖼️', ButtonStyle.Primary),
@@ -121,21 +125,39 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
       ),
       extra,
     ],
-    allowedMentions: NO_MENTIONS,
-  };
+  });
 }
 
-const screen = (content, ...rows) => ({ content, files: [], components: rows, allowedMentions: NO_MENTIONS });
+/**
+ * Écran « Components V2 »: un conteneur avec textes, galerie média facultative et rangées d'actions.
+ * Tout le tableau de bord est en V2 car ce drapeau ne peut jamais être retiré d'un message: autant
+ * que tous les écrans d'un même message privé soient du même format.
+ */
+function v2({ texts, media = [], files = [], rows = [] }) {
+  const container = new ContainerBuilder().setAccentColor(0xf5a623)
+    .addTextDisplayComponents(...texts.map((t) => new TextDisplayBuilder().setContent(t)));
+  if (media.length) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(...media.map((url) => new MediaGalleryItemBuilder().setURL(url))),
+    );
+  }
+  if (rows.length) container.addActionRowComponents(...rows);
+  return { components: [container], files, flags: V2, allowedMentions: NO_MENTIONS };
+}
+
+const screen = (content, ...rows) => v2({ texts: [content], rows });
+const ephemeral = (payload) => ({ ...payload, flags: (payload.flags ?? 0) | EPHEMERAL });
 
 /** Répond sur place si on clique depuis un message privé, sinon crée un nouveau message privé. */
 async function respond(i, payload) {
   const fromDashboard = i.isFromMessage?.() && i.message.flags.has(EPHEMERAL);
-  if (fromDashboard) return i.update({ embeds: [], ...payload, attachments: [] });
-  return i.reply({ ...payload, flags: EPHEMERAL });
+  // content/embeds remis à vide: un message privé antérieur au passage en V2 peut encore en porter.
+  if (fromDashboard) return i.update({ content: null, embeds: [], ...payload, attachments: [] });
+  return i.reply(ephemeral(payload));
 }
 
 /** Variante après un `deferUpdate` (opérations longues: téléchargement de média). */
-const respondDeferred = (i, payload) => i.editReply({ embeds: [], ...payload, attachments: [] });
+const respondDeferred = (i, payload) => i.editReply({ content: null, embeds: [], ...payload, attachments: [] });
 
 const nameOf = (i) => i.member?.displayName ?? i.user.displayName ?? i.user.username;
 const dash = (i, extra = {}) =>
@@ -206,7 +228,7 @@ const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitl
     .setTextInputComponent(textInput('query', TextInputStyle.Short).setRequired(true).setMaxLength(50)),
 );
 
-// Grille façon sélecteur Discord: 4 GIF à la fois (embeds de même URL = galerie), tendances par défaut,
+// Grille façon sélecteur Discord: 4 GIF à la fois (galerie de médias V2), tendances par défaut,
 // la recherche remplace la liste. Résultats gardés en mémoire le temps du choix (redémarrage = nouvelle recherche).
 const GIFS_PER_PAGE = 4;
 // Raccourcis façon tuiles du sélecteur Discord: libellé affiché → mot recherché ('' = tendances).
@@ -228,16 +250,14 @@ function gifScreen(state) {
   const start = state.page * GIFS_PER_PAGE;
   const shown = state.results.slice(start, start + GIFS_PER_PAGE);
   const title = state.query ? `🔎 « ${state.query} »` : '🔥 GIF recommandés';
-  const embeds = shown.map((gif, k) => {
-    const embed = new EmbedBuilder().setColor(0xf5a623).setURL('https://giphy.com').setImage(gif.preview);
-    if (k === 0) embed.setTitle(`${title} — page ${state.page + 1}/${gifPageCount(state)}`).setFooter({ text: 'Powered by GIPHY' });
-    return embed;
-  });
-  const picks = shown.map((_, k) => button(ID.gifPick[k], String(k + 1), '🎞️', ButtonStyle.Success));
-  return {
-    ...screen(
-      'Clique sur le **numéro** du GIF que tu veux (1 2 en haut, 3 4 en bas), ou cherche un mot précis.',
-      row(...picks),
+  return v2({
+    texts: [
+      `### ${title} — page ${state.page + 1}/${gifPageCount(state)}`,
+      'Clique sur le **numéro** du GIF que tu veux (1 2 en haut, 3 4 en bas), ou cherche un mot précis.\n-# Powered by GIPHY',
+    ],
+    media: shown.map((gif) => gif.preview),
+    rows: [
+      row(...shown.map((_, k) => button(ID.gifPick[k], String(k + 1), '🎞️', ButtonStyle.Success))),
       row(new StringSelectMenuBuilder().setCustomId(ID.gifCategory).setPlaceholder('Catégories')
         .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
       row(
@@ -246,9 +266,8 @@ function gifScreen(state) {
         button(ID.gifQuery, 'Rechercher', '🔎', ButtonStyle.Primary),
         backButton(),
       ),
-    ),
-    embeds,
-  };
+    ],
+  });
 }
 
 const gifKey = (i) => `${i.guildId}:${i.user.id}`;
@@ -341,6 +360,8 @@ export async function handleDirectMessage(message) {
 
   // Le jeton de l'interaction vit 15 min: au-delà (ou message privé fermé), le MP de confirmation suffit.
   await interaction.editReply({
+    content: null,
+    embeds: [],
     ...buildDashboard({ guildId, userId: message.author.id, name: nameOf(interaction), notice: '✅ Média enregistré.' }),
     attachments: [],
   }).catch(() => {});
@@ -366,7 +387,7 @@ export function upcomingText(guildId) {
 /** Ouvre le parcours: fenêtre de date pour un nouveau, tableau de bord pour un inscrit. */
 export async function openFlow(i) {
   if (!getBirthday(i.guildId, i.user.id)) return i.showModal(dateModal(null));
-  return i.reply({ ...dash(i), flags: EPHEMERAL });
+  return i.reply(ephemeral(dash(i)));
 }
 
 const retryDate = (message) => screen(message, row(button(ID.date, 'Réessayer', '📅', ButtonStyle.Primary)));
@@ -448,7 +469,7 @@ const actions = {
     const parsed = parseBirthdayInput(i.fields.getTextInputValue('date'));
     const error = parsed ? validateBirthday(parsed, new Date().getFullYear()) : 'Je n\'ai pas compris cette date.';
     if (error) {
-      return i.reply({ ...retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`), flags: EPHEMERAL });
+      return i.reply(ephemeral(retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`)));
     }
     return saveDate(i, parsed);
   },
