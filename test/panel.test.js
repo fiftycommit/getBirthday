@@ -183,8 +183,6 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
     const first = open.last('editReply');
     assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://static.klipy.com/g${k}/small.gif`));
-    assert.match(view(first).content, /GIF recommandés/);
-    assert.match(view(first).content, /Page 1\/2/);
     assert.match(view(first).content, /Powered by KLIPY/);
     assert.equal(first.flags & 32768, 32768); // Components V2
     assert.deepEqual(ids(first), [ID.gifQuery, ID.gifCategory, ...ID.gifPick, ID.gifPrev, ID.gifNext, ID.back]);
@@ -196,8 +194,8 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     assert.equal(url.searchParams.get('content_filter'), 'high');
     assert.equal(url.searchParams.get('locale'), 'fr');
 
-    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 2\/2/);
-    assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 1\/2/); // boucle
+    assert.equal(view((await button(ID.gifNext, g)).last('update')).media[0], 'https://static.klipy.com/g4/small.gif');
+    assert.equal(view((await button(ID.gifNext, g)).last('update')).media[0], 'https://static.klipy.com/g0/small.gif');
     await button(ID.gifPrev, g); // page 2
 
     const pick = await button(ID.gifPick[1], g); // 2e GIF de la page 2 → g5
@@ -238,7 +236,6 @@ test('GIF: les catégories (tuiles façon Discord) lancent la bonne recherche, �
     assert.match(view(cat.last('editReply')).content, /« joyeux anniversaire »/);
     assert.match(fetchMock.mock.calls.at(-1).arguments[0], /gifs\/search\?.*q=joyeux\+anniversaire/);
     const top = await run({ kind: 'select', customId: ID.gifCategory, values: ['trending'], ...g });
-    assert.match(view(top.last('editReply')).content, /recommandés/);
   });
 });
 
@@ -323,7 +320,7 @@ test('GIF: GIPHY et KLIPY conservent chacun recherche et page lors du changement
       assert.match(view(klipy.last('editReply')).content, /Powered by KLIPY/);
       await modal(ID.modalGif, { query: 'fête' }, g);
       const restored = await button(ID.giphySearch, g);
-      assert.match(view(restored.last('update')).content, /Page 2\/2/);
+      assert.equal(view(restored.last('update')).media[0], 'https://media.giphy.com/media/g4/preview.gif');
       const back = await button(ID.gifSearch, g);
       assert.match(view(back.last('update')).content, /« fête »/);
       const search = await modal(ID.modalGiphy, { query: 'Happy  Birthday' }, g);

@@ -76,11 +76,11 @@ export function buildPanel() {
   return {
     embeds: [new EmbedBuilder()
       .setColor(0xf5a623)
-      .setTitle('🎂 Ne rate plus aucun anniversaire')
+      .setTitle('🎂 Les anniversaires du serveur')
       .setDescription(
-        'Ajoute le tien en 30 secondes: ta date, ton message, et même un GIF, une photo ou une vidéo.\n'
-        + 'Le jour J, je le poste pour toi 🎉\n\n'
-        + '**Clique sur le bouton, je te guide.**',
+        'Enregistre ta date et personnalise ton message avec un GIF, une photo ou une vidéo.\n'
+        + 'Le jour venu, le bot le publiera dans le salon choisi.\n\n'
+        + 'Choisis **Mon anniversaire** pour commencer ou modifier tes préférences.',
       )],
     components: [row(
       button(ID.open, 'Mon anniversaire', '🎂', ButtonStyle.Primary),
@@ -121,17 +121,18 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
   return v2({
     texts: [
       notice,
-      `### 🎂 Ton anniversaire: **${formatDate(b)}**`,
-      `-# Aperçu du message posté le jour J ${where}`,
+      '### 🎂 Mon anniversaire',
+      `**${formatDate(b)}**\n-# Annonce prévue ${where}`,
+      '**Aperçu de ton message**',
       quoted,
     ].filter(Boolean),
     media: preview ? [preview] : [],
     files,
     rows: [
       row(
-        button(ID.text, 'Modifier mon message', '✏️', ButtonStyle.Primary),
-        button(ID.media, hasMedia ? 'Changer le média' : 'Ajouter un média', '🖼️', ButtonStyle.Primary),
-        button(ID.date, 'Changer la date', '📅'),
+        button(ID.text, 'Message', '✏️', ButtonStyle.Primary),
+        button(ID.media, hasMedia ? 'Modifier le média' : 'Ajouter un média', '🖼️'),
+        button(ID.date, 'Date', '📅'),
       ),
       extra,
     ],
@@ -223,7 +224,7 @@ const mediaLinkModal = () => new ModalBuilder().setCustomId(ID.modalMediaLink).s
 // ───────────────────────── Média: menu, GIF via messages privés ─────────────────────────
 
 const mediaMenu = () => screen(
-  '### 🖼️ Ajouter un média\nComment veux-tu l\'ajouter ?',
+  '### 🖼️ Ajouter un média\nChoisis une source pour accompagner ton message.',
   row(
     ...(klipyEnabled() ? [button(ID.gifSearch, 'GIF KLIPY', '🔎', ButtonStyle.Primary)] : []),
     ...(giphy.giphyEnabled() ? [button(ID.giphySearch, 'GIF GIPHY', '🔎', ButtonStyle.Primary)] : []),
@@ -268,12 +269,11 @@ const gifPageCount = (state) => Math.ceil(state.results.length / GIFS_PER_PAGE);
 function gifScreen(state, provider) {
   const start = state.page * GIFS_PER_PAGE;
   const shown = state.results.slice(start, start + GIFS_PER_PAGE);
-  const title = state.query ? `« ${state.query} »` : 'GIF recommandés';
-  // Même ordre que le sélecteur de Discord: barre de recherche, catégories, grille, puis navigation.
+  const title = state.query ? `Résultats pour « ${state.query} »` : 'À la une';
   return v2({
-    texts: [`### 🎞️ ${title}`],
+    texts: [`### ${title}\n-# ${provider.name} · Page ${state.page + 1} sur ${gifPageCount(state)}`],
     before: [
-      row(button(provider.query, `Rechercher sur ${provider.name}…`, '🔍')),
+      row(button(provider.query, 'Rechercher un GIF', '🔍', ButtonStyle.Primary)),
       row(new StringSelectMenuBuilder().setCustomId(provider.category).setPlaceholder('Catégories: fête, LOL, amour…')
         .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
     ],
@@ -287,7 +287,7 @@ function gifScreen(state, provider) {
       ),
       ...(Object.values(providers).filter((p) => p !== provider && p.enabled()).map((p) => row(button(p.open, `Voir ${p.name}`, '🔄')))),
     ],
-    footer: `-# Page ${state.page + 1}/${gifPageCount(state)} · clique sur le numéro du GIF choisi (1 2 en haut, 3 4 en bas) · Powered by ${provider.name}`,
+    footer: `-# Choisis un numéro : 1 et 2 en haut, 3 et 4 en bas · Powered by ${provider.name}`,
   });
 }
 
