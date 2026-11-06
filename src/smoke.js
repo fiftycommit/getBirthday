@@ -1,6 +1,4 @@
-// Smoke test exécuté par la CI *dans l'image de production*, avec les mêmes contraintes que le compose
-// (utilisateur non-root, système de fichiers en lecture seule, /tmp en tmpfs, ./data monté).
-// Vérifie que l'image démarre réellement: imports, SQLite, écriture disque, sauvegarde, rendu d'annonce.
+// Vérifie le démarrage et l'écriture dans l'image de production.
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';

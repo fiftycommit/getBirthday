@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Exécuté sur le serveur comme *commande forcée* de la clé SSH de déploiement (authorized_keys):
-#   restrict,command="/home/ubuntu/getBirthday/scripts/deploy.sh" ssh-ed25519 AAAA… getbirthday-deploy
-# La CI envoie `deploy <sha>` et, sur la 1re ligne de stdin, un token GHCR éphémère (celui du job, valide le temps du job).
-# L'image est tirée du registre: seules les couches modifiées sont téléchargées (en pratique: la couche `src`, quelques Ko).
+# Commande forcée de la clé SSH de déploiement dans authorized_keys.
+# La CI envoie `deploy <sha>`, puis un token GHCR sur stdin.
 set -euo pipefail
 
 IMAGE_REPO=ghcr.io/fiftycommit/getbirthday
@@ -19,7 +17,7 @@ main() {
   flock -n 9 || { echo "déploiement déjà en cours" >&2; exit 3; }
 
   echo "▶ Pull $IMAGE_REPO:$sha"
-  # Config Docker jetable: le token n'est jamais écrit dans ~/.docker.
+  # Utilise une configuration Docker temporaire pour le token.
   local cfg; cfg=$(mktemp -d)
   printf '%s' "$token" | DOCKER_CONFIG=$cfg docker login ghcr.io -u github-actions --password-stdin >/dev/null
   DOCKER_CONFIG=$cfg docker pull -q "$IMAGE_REPO:$sha" >/dev/null

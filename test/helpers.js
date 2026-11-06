@@ -3,18 +3,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Collection, MessageFlags } from 'discord.js';
 
-/** Doit être appelé AVANT tout import de src/db.js (le chemin est lu à l'import). */
+// À appeler avant l'import de src/db.js, qui lit DATA_DIR au chargement.
 export function useTempDataDir() {
   const dir = mkdtempSync(path.join(tmpdir(), 'getbirthday-test-'));
   process.env.DATA_DIR = dir;
   return dir;
 }
 
-/**
- * Fausse interaction Discord. `kind`: 'command' | 'button' | 'select' | 'modal'.
- * `fromEphemeral`: le bouton/la fenêtre vient d'un message privé (tableau de bord) — sinon du panneau public.
- * `calls` garde l'ordre des appels (reply/update/showModal/…) pour vérifier le comportement observable.
- */
+// Simule une interaction Discord et conserve les appels dans l'ordre.
+// fromEphemeral indique si l'interaction vient du tableau de bord privé.
 export function fakeInteraction({
   kind = 'command', guildId = 'G', userId = 'U', commandName = 'anniversaire', customId,
   opts = {}, fields = {}, files = null, fromEphemeral = false, channel = null, values = [], dm = null,
@@ -53,10 +50,7 @@ export function fakeInteraction({
   return { interaction, calls, last, text };
 }
 
-/**
- * Aplatit un message (V1 ou « Components V2 ») en ce que voit l'utilisateur:
- * `content` (textes), `ids` (boutons/listes cliquables), `media` (URLs de la galerie), `links` (boutons lien).
- */
+// Extrait les textes, identifiants, médias et liens d'un message V1 ou V2.
 export function view(payload) {
   const out = { content: payload?.content ?? '', ids: [], media: [], links: [] };
   const texts = payload?.content ? [payload.content] : [];

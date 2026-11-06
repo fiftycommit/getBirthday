@@ -5,13 +5,13 @@ import { removeMediaFile } from './media.js';
 
 const TICK_MS = 60_000;
 const RETRY_DELAY_MS = 10 * 60_000;
-const retryAfter = new Map(); // `${guild}:${user}` -> timestamp ms
+const retryAfter = new Map();
 
 const DISCORD_UNKNOWN_MEMBER = 10007;
 
 async function announceGuild(client, config) {
   const now = nowIn(config.timezone);
-  // `>=`: si le bot était éteint à l'heure H, il rattrape dans la journée.
+  // Rattraper les annonces de la journée après un redémarrage.
   if (now.hour < config.hour) return;
 
   const due = listBirthdays(config.guild_id).filter(
@@ -35,7 +35,7 @@ async function announceGuild(client, config) {
       member = await guild.members.fetch(b.user_id);
     } catch (err) {
       if (err.code === DISCORD_UNKNOWN_MEMBER) {
-        // Parti du serveur: on purge ses données.
+        // Supprimer les données d'un membre qui a quitté le serveur.
         await removeMediaFile(b.media_path);
         deleteBirthday(b.guild_id, b.user_id);
       } else {
@@ -58,7 +58,6 @@ async function announceGuild(client, config) {
 
 let running = false;
 
-/** Un passage: annonce les anniversaires dus pour tous les serveurs configurés. */
 export async function runTick(client) {
   if (running) return;
   running = true;

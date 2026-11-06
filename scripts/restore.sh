@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Restaure une sauvegarde: scripts/restore.sh [nom]   (sans argument: liste; "latest": la plus récente)
-# Les données actuelles sont conservées dans data/pre-restore-<horodatage>/ (rien n'est détruit).
+# Sans argument, liste les sauvegardes ; "latest" restaure la plus récente.
+# Les données actuelles sont conservées dans data/pre-restore-<horodatage>/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -9,8 +9,8 @@ const VARIABLES = '`{user}` (mention), `{nom}`, `{age}`, `{date}`';
 const EPHEMERAL = MessageFlags.Ephemeral;
 const NO_MENTIONS = { parse: [] };
 
-const guildOnly = (b) => b.setContexts(InteractionContextType.Guild);
-const salonOption = (o, description) => o.setName('salon').setDescription(description)
+const guildOnly = (command) => command.setContexts(InteractionContextType.Guild);
+const salonOption = (option, description) => option.setName('salon').setDescription(description)
   .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 
 export const commandDefinitions = [
@@ -26,25 +26,25 @@ export const commandDefinitions = [
     .setName('anniversaire-panneau')
     .setDescription('Poste le panneau « Ajouter mon anniversaire » (admins)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addChannelOption((o) => salonOption(o, 'Salon où poster le panneau (ici par défaut)'))),
+    .addChannelOption((option) => salonOption(option, 'Salon où poster le panneau (ici par défaut)'))),
 
   guildOnly(new SlashCommandBuilder()
     .setName('anniversaire-config')
     .setDescription('Configure le bot d\'anniversaires (admins)')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addChannelOption((o) => salonOption(o, 'Salon où poster les annonces'))
-    .addIntegerOption((o) => o.setName('heure').setDescription('Heure d\'annonce (0-23)').setMinValue(0).setMaxValue(23))
-    .addStringOption((o) => o.setName('fuseau').setDescription('Fuseau horaire IANA, ex: Europe/Paris'))
-    .addStringOption((o) => o.setName('message-defaut').setDescription('Message par défaut du serveur').setMaxLength(MAX_MESSAGE_LENGTH))
-    .addBooleanOption((o) => o.setName('reinitialiser-message').setDescription('Revenir au message par défaut du bot'))),
-].map((c) => c.toJSON());
+    .addChannelOption((option) => salonOption(option, 'Salon où poster les annonces'))
+    .addIntegerOption((option) => option.setName('heure').setDescription('Heure d\'annonce (0-23)').setMinValue(0).setMaxValue(23))
+    .addStringOption((option) => option.setName('fuseau').setDescription('Fuseau horaire IANA, ex: Europe/Paris'))
+    .addStringOption((option) => option.setName('message-defaut').setDescription('Message par défaut du serveur').setMaxLength(MAX_MESSAGE_LENGTH))
+    .addBooleanOption((option) => option.setName('reinitialiser-message').setDescription('Revenir au message par défaut du bot'))),
+].map((command) => command.toJSON());
 
 const reply = (i, content, extra = {}) =>
   i.reply({ content, flags: EPHEMERAL, allowedMentions: NO_MENTIONS, ...extra });
 
-const isValidTimeZone = (tz) => {
+const isValidTimeZone = (timezone) => {
   try {
-    new Intl.DateTimeFormat('en', { timeZone: tz });
+    new Intl.DateTimeFormat('en', { timeZone: timezone });
     return true;
   } catch {
     return false;
@@ -53,8 +53,8 @@ const isValidTimeZone = (tz) => {
 
 async function handlePanelCommand(i) {
   const channel = i.options.getChannel('salon') ?? i.channel;
-  const perms = channel.permissionsFor(i.guild.members.me);
-  const missing = ['ViewChannel', 'SendMessages', 'EmbedLinks'].filter((p) => !perms?.has(p));
+  const permissions = channel.permissionsFor(i.guild.members.me);
+  const missing = ['ViewChannel', 'SendMessages', 'EmbedLinks'].filter((permission) => !permissions?.has(permission));
   if (missing.length) return reply(i, `❌ Permissions manquantes pour le bot dans ${channel}: ${missing.join(', ')}.`);
   await channel.send(buildPanel());
   const config = getGuildConfig(i.guildId);
@@ -75,8 +75,8 @@ async function handleConfig(i) {
   const warnings = [];
   if (channel) {
     patch.channel_id = channel.id;
-    const perms = channel.permissionsFor(i.guild.members.me);
-    const missing = ['ViewChannel', 'SendMessages', 'AttachFiles'].filter((p) => !perms?.has(p));
+    const permissions = channel.permissionsFor(i.guild.members.me);
+    const missing = ['ViewChannel', 'SendMessages', 'AttachFiles'].filter((permission) => !permissions?.has(permission));
     if (missing.length) warnings.push(`⚠️ Permissions manquantes pour le bot dans ce salon: ${missing.join(', ')}.`);
   }
   if (hour !== null) patch.hour = hour;
@@ -99,8 +99,7 @@ async function handleConfig(i) {
 export async function handleInteraction(i) {
   if (!i.guildId) return;
   try {
-    // Bot invité avec le seul scope `applications.commands`: les commandes arrivent mais le bot n'est pas
-    // membre du serveur (i.guild nul) et ne pourrait ni lire les salons ni poster d'annonce.
+    // Sans le scope bot, les commandes arrivent mais le bot n'est pas membre du serveur.
     if (!i.guild) {
       return await i.reply({
         content: '❌ Je ne suis pas membre de ce serveur. Un admin doit m\'inviter avec le scope **bot** (en plus de applications.commands).',
@@ -115,10 +114,10 @@ export async function handleInteraction(i) {
       return;
     }
     await handlePanelInteraction(i);
-  } catch (err) {
-    console.error(`interaction ${i.commandName ?? i.customId}`, err);
-    const msg = { content: '❌ Erreur interne.', flags: EPHEMERAL };
-    if (i.deferred || i.replied) await i.followUp(msg).catch(() => {});
-    else await i.reply(msg).catch(() => {});
+  } catch (error) {
+    console.error(`interaction ${i.commandName ?? i.customId}`, error);
+    const message = { content: '❌ Erreur interne.', flags: EPHEMERAL };
+    if (i.deferred || i.replied) await i.followUp(message).catch(() => {});
+    else await i.reply(message).catch(() => {});
   }
 }

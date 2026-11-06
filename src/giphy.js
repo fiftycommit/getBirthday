@@ -1,4 +1,4 @@
-// Recherche GIPHY: seules les listes de résultats sont mises en cache en mémoire.
+// Seules les listes de résultats sont gardées en cache.
 const CACHE_TTL_MS = 15 * 60_000;
 const CACHE_MAX = 200;
 const TIMEOUT_MS = 8_000;

@@ -13,11 +13,8 @@ const list = () =>
     ? readdirSync(BACKUP_DIR).filter((n) => /^\d{4}-\d{2}-\d{2}T\d{6}Z$/.test(n)).sort()
     : [];
 
-/**
- * Les médias sont des liens physiques: un fichier média n'est jamais modifié en place (chaque upload
- * crée un nouveau nom), donc 30 sauvegardes ne coûtent pas 30x l'espace disque même avec des Go de médias.
- * Repli sur une vraie copie si le lien est impossible (autre système de fichiers).
- */
+// Les médias ne changent jamais en place : les liens physiques évitent de les recopier.
+// Si le lien est impossible, on copie le fichier.
 function linkMedia(src, dst) {
   mkdirSync(dst, { recursive: true });
   for (const name of readdirSync(src)) {
@@ -29,10 +26,7 @@ function linkMedia(src, dst) {
   }
 }
 
-/**
- * Sauvegarde cohérente: snapshot SQLite + médias, écrite dans un dossier temporaire puis
- * renommée (un backup n'est jamais visible à moitié écrit). Rotation: on garde les KEEP plus récents.
- */
+// Le renommage rend la sauvegarde visible seulement une fois complète.
 export function runBackup(now = new Date()) {
   const stamp = now.toISOString().replaceAll(':', '').replace(/\.\d+Z$/, 'Z');
   const final = path.join(BACKUP_DIR, stamp);
@@ -51,7 +45,7 @@ export function runBackup(now = new Date()) {
   return final;
 }
 
-/** Au démarrage puis chaque heure: sauvegarde si la dernière a plus de 24 h (robuste aux redémarrages). */
+// Vérifier au démarrage puis chaque heure si une sauvegarde est nécessaire.
 export function startBackupSchedule() {
   const check = () => {
     try {

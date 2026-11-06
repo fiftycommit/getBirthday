@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 
-// DATA_DIR surcharge l'emplacement (tests, smoke test); par défaut ./data à la racine du projet.
+// DATA_DIR permet de choisir l'emplacement de la base et des médias.
 export const DATA_DIR = process.env.DATA_DIR
   ? `${process.env.DATA_DIR.replace(/\/+$/, '')}/`
   : new URL('../data/', import.meta.url).pathname;
@@ -71,10 +71,10 @@ export const deleteBirthday = (g, u) => q.remove.run(g, u);
 export const getGuildConfig = (g) => q.getConfig.get(g);
 export const listGuildConfigs = () => q.allConfigs.all();
 export function saveGuildConfig(g, patch) {
-  const cur = q.getConfig.get(g) ?? {
+  const current = q.getConfig.get(g) ?? {
     channel_id: null, hour: 9, timezone: 'Europe/Paris', default_message: null,
   };
-  const next = { ...cur, ...patch };
+  const next = { ...current, ...patch };
   q.upsertConfig.run(g, next.channel_id, next.hour, next.timezone, next.default_message);
   return next;
 }

@@ -17,8 +17,7 @@ const route = DISCORD_GUILD_ID
   : Routes.applicationCommands(DISCORD_CLIENT_ID);
 await rest.put(route, { body: commandDefinitions });
 
-// DirectMessages + partial Channel: réception des MP (sélecteur GIF). Le contenu des MP est lisible
-// sans l'intention privilégiée MessageContent.
+// Les messages privés sont accessibles sans l'intention privilégiée MessageContent.
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
   partials: [Partials.Channel],
@@ -27,7 +26,7 @@ client.once(Events.ClientReady, (c) => {
   console.log(`Connecté en tant que ${c.user.tag}`);
   startBackupSchedule();
   startScheduler(c);
-  // Battement de coeur lu par le HEALTHCHECK Docker: n'est écrit que tant que la gateway est connectée.
+  // Le healthcheck Docker vérifie que la gateway est connectée.
   const beat = () => c.ws.status === 0 && writeFileSync('/tmp/healthy', String(Date.now()));
   beat();
   setInterval(beat, 15_000);

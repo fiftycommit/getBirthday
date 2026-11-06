@@ -1,4 +1,4 @@
-// Recherche de GIF KLIPY; les réponses sont gardées 15 minutes en mémoire, pas les médias.
+// Seules les listes de résultats sont gardées en cache.
 const CACHE_TTL_MS = 15 * 60_000;
 const CACHE_MAX = 200;
 const TIMEOUT_MS = 8_000;

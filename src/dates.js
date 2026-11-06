@@ -1,5 +1,3 @@
-// Logique de dates et de texte, pure (sans I/O) pour rester testable.
-
 const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // février = max (bissextile)
 
 export const MONTH_NAMES = [
@@ -11,7 +9,6 @@ export function isLeap(year) {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-/** Valide jour/mois et, si fourni, l'année (29/02 exige une année bissextile). */
 export function validateBirthday({ day, month, year = null }, currentYear) {
   if (!Number.isInteger(month) || month < 1 || month > 12) return 'Mois invalide (1-12).';
   if (!Number.isInteger(day) || day < 1 || day > DAYS_IN_MONTH[month - 1]) {
@@ -24,7 +21,6 @@ export function validateBirthday({ day, month, year = null }, currentYear) {
   return null;
 }
 
-/** Date courante {year, month, day, hour} dans un fuseau IANA. */
 export function nowIn(timeZone, date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -34,25 +30,24 @@ export function nowIn(timeZone, date = new Date()) {
   return { year: get('year'), month: get('month'), day: get('day'), hour: get('hour') };
 }
 
-/** Jour effectif de l'anniversaire pour une année donnée: le 29/02 est fêté le 28/02 hors bissextile. */
+// Le 29 février est fêté le 28 les années non bissextiles.
 function effectiveDate(b, year) {
   if (b.month === 2 && b.day === 29 && !isLeap(year)) return { month: 2, day: 28 };
   return { month: b.month, day: b.day };
 }
 
-export function isBirthdayToday(b, today) {
-  const e = effectiveDate(b, today.year);
-  return e.month === today.month && e.day === today.day;
+export function isBirthdayToday(birthday, today) {
+  const date = effectiveDate(birthday, today.year);
+  return date.month === today.month && date.day === today.day;
 }
 
 const utcDay = (y, m, d) => Date.UTC(y, m - 1, d) / 86_400_000;
 
-/** Nombre de jours avant la prochaine occurrence (0 = aujourd'hui). */
-export function daysUntil(b, today) {
-  const t = utcDay(today.year, today.month, today.day);
+export function daysUntil(birthday, today) {
+  const currentDay = utcDay(today.year, today.month, today.day);
   for (const year of [today.year, today.year + 1]) {
-    const e = effectiveDate(b, year);
-    const diff = utcDay(year, e.month, e.day) - t;
+    const date = effectiveDate(birthday, year);
+    const diff = utcDay(year, date.month, date.day) - currentDay;
     if (diff >= 0) return diff;
   }
   /* c8 ignore next */
@@ -71,10 +66,7 @@ export function formatDate(b) {
 export const DEFAULT_MESSAGE = '🎂 Joyeux anniversaire {user} ! 🎉';
 export const MAX_MESSAGE_LENGTH = 1000;
 
-/**
- * Variables: {user} (mention), {nom}, {age} (« ? » si l'année est inconnue), {date}.
- * Un unique passage évite qu'une valeur substituée soit re-interprétée.
- */
+// Un seul passage évite de remplacer les variables présentes dans une valeur.
 export function renderMessage(template, { userId, name, age, birthday }) {
   const vars = {
     user: `<@${userId}>`,
@@ -85,7 +77,6 @@ export function renderMessage(template, { userId, name, age, birthday }) {
   return template.replace(/\{(user|nom|age|date)\}/g, (_, k) => vars[k]);
 }
 
-/** Année de la prochaine occurrence (aujourd'hui compris): sert à afficher le bon âge dans l'aperçu. */
 export function nextBirthdayYear(b, today) {
   const d = new Date(Date.UTC(today.year, today.month - 1, today.day + daysUntil(b, today)));
   return d.getUTCFullYear();
@@ -93,11 +84,7 @@ export function nextBirthdayYear(b, today) {
 
 const strip = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
-/**
- * Lecture tolérante d'une date saisie à la main: « 06/11/2000 », « 6-11 », « 6.11.2000 »,
- * « 2000-11-06 », « 6 novembre 2000 », « 6 nov ». Retourne null si illisible; la validité
- * calendaire est vérifiée ensuite par validateBirthday.
- */
+// La validité de la date est vérifiée séparément par validateBirthday.
 export function parseBirthdayInput(raw) {
   const text = strip(raw.toLowerCase().trim()).replace(/\s+/g, ' ');
 

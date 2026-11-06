@@ -1,5 +1,4 @@
-// Interface « zéro commande »: un panneau public avec un bouton, puis un tableau de bord privé
-// (message éphémère) qui se met à jour sur place et montre toujours l'aperçu exact de l'annonce.
+// Panneau public et tableau de bord privé pour gérer son anniversaire.
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, EmbedBuilder, FileUploadBuilder,
   LabelBuilder, MediaGalleryBuilder, MediaGalleryItemBuilder, MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextDisplayBuilder,
@@ -66,13 +65,11 @@ const MAX_URL_LENGTH = 400;
 const SESSION_TTL_MS = 10 * 60_000; // < 15 min: durée de validité du jeton d'une interaction
 
 const button = (id, label, emoji, style = ButtonStyle.Secondary) => {
-  const b = new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
-  return emoji ? b.setEmoji(emoji) : b;
+  const result = new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style);
+  return emoji ? result.setEmoji(emoji) : result;
 };
 const row = (...components) => new ActionRowBuilder().addComponents(...components);
 const backButton = () => button(ID.back, 'Retour', '↩️');
-
-// ───────────────────────── Panneau public ─────────────────────────
 
 export function buildPanel() {
   return {
@@ -91,37 +88,30 @@ export function buildPanel() {
   };
 }
 
-// ───────────────────────── Tableau de bord privé ─────────────────────────
-
-
-/**
- * Message éphémère: en-tête + aperçu fidèle (même fonction que celle qui poste l'annonce) + actions.
- * Les boutons secondaires n'apparaissent que s'ils ont un sens (pas de « retirer » sans média).
- */
 export function buildDashboard({ guildId, userId, name, notice = null }) {
-  const b = getBirthday(guildId, userId);
+  const birthday = getBirthday(guildId, userId);
   const config = getGuildConfig(guildId);
   const today = nowIn(config?.timezone ?? DEFAULT_TZ);
 
-  const announcement = buildAnnouncement({ birthday: b, config, name, year: nextBirthdayYear(b, today) });
-  const quoted = announcement.content.split('\n').map((l) => `> ${l}`).join('\n');
+  const announcement = buildAnnouncement({ birthday, config, name, year: nextBirthdayYear(birthday, today) });
+  const quoted = announcement.content.split('\n').map((line) => `> ${line}`).join('\n');
   const where = config?.channel_id
     ? `à ${config.hour}h dans <#${config.channel_id}>`
     : '… dès qu\'un admin aura choisi le salon (`/anniversaire-config`)';
 
-  const hasMedia = Boolean(b.media_path || b.media_url);
+  const hasMedia = Boolean(birthday.media_path || birthday.media_url);
   const extra = row();
-  if (b.message) extra.addComponents(button(ID.textReset, 'Message par défaut', '↩️'));
+  if (birthday.message) extra.addComponents(button(ID.textReset, 'Message par défaut', '↩️'));
   if (hasMedia) extra.addComponents(button(ID.mediaRemove, 'Retirer le média', '🚫'));
   extra.addComponents(button(ID.del, 'Tout supprimer', '🗑️', ButtonStyle.Danger));
 
   const files = announcement.files ?? [];
-  const preview = files.length ? `attachment://${files[0].name}` : previewUrlFor(b.media_url);
+  const preview = files.length ? `attachment://${files[0].name}` : previewUrlFor(birthday.media_url);
   return v2({
     texts: [
       notice,
       '### 🎂 Mon anniversaire',
-      `**${formatDate(b)}**\n-# Annonce prévue ${where}`,
+      `**${formatDate(birthday)}**\n-# Annonce prévue ${where}`,
       '**Aperçu de ton message**',
       quoted,
     ].filter(Boolean),
@@ -139,15 +129,11 @@ export function buildDashboard({ guildId, userId, name, notice = null }) {
   });
 }
 
-/**
- * Écran « Components V2 »: un conteneur avec textes, galerie média facultative et rangées d'actions.
- * Tout le tableau de bord est en V2 car ce drapeau ne peut jamais être retiré d'un message: autant
- * que tous les écrans d'un même message privé soient du même format.
- */
+// Le drapeau V2 ne peut pas être retiré : tous les écrans privés utilisent ce format.
 function v2({ texts, before = [], media = [], files = [], rows = [], footer = null }) {
   const container = new ContainerBuilder().setAccentColor(0xf5a623)
     .addTextDisplayComponents(...texts.map((t) => new TextDisplayBuilder().setContent(t)));
-  if (before.length) container.addActionRowComponents(...before); // ex: barre de recherche au-dessus de la galerie
+  if (before.length) container.addActionRowComponents(...before);
   if (media.length) {
     container.addMediaGalleryComponents(
       new MediaGalleryBuilder().addItems(...media.map((url) => new MediaGalleryItemBuilder().setURL(url))),
@@ -161,7 +147,7 @@ function v2({ texts, before = [], media = [], files = [], rows = [], footer = nu
 const screen = (content, ...rows) => v2({ texts: [content], rows });
 const ephemeral = (payload) => ({ ...payload, flags: (payload.flags ?? 0) | EPHEMERAL });
 
-/** Répond sur place si on clique depuis un message privé, sinon crée un nouveau message privé. */
+// Met à jour le tableau de bord ou répond avec un nouveau message privé.
 async function respond(i, payload) {
   const fromDashboard = Boolean(i.message?.flags.has(EPHEMERAL)) &&
     (i.isButton?.() || i.isStringSelectMenu?.() || i.isFromMessage?.());
@@ -170,14 +156,12 @@ async function respond(i, payload) {
   return i.reply(ephemeral(payload));
 }
 
-/** Variante après un `deferUpdate` (opérations longues: téléchargement de média). */
+// Après deferUpdate, la réponse doit être modifiée plutôt qu'envoyée.
 const respondDeferred = (i, payload) => i.editReply({ content: null, embeds: [], ...payload, attachments: [] });
 
 const nameOf = (i) => i.member?.displayName ?? i.user.displayName ?? i.user.username;
 const dash = (i, extra = {}) =>
   buildDashboard({ guildId: i.guildId, userId: i.user.id, name: nameOf(i), ...extra });
-
-// ───────────────────────── Fenêtres de saisie ─────────────────────────
 
 const textInput = (id, style) => new TextInputBuilder().setCustomId(id).setStyle(style);
 
@@ -185,9 +169,9 @@ function dateModal(current) {
   const input = textInput('date', TextInputStyle.Short)
     .setRequired(true).setMaxLength(30).setPlaceholder('ex : 06/11/2000 ou 6 novembre');
   if (current) {
-    const dd = String(current.day).padStart(2, '0');
-    const mm = String(current.month).padStart(2, '0');
-    input.setValue(`${dd}/${mm}${current.year ? `/${current.year}` : ''}`);
+    const day = String(current.day).padStart(2, '0');
+    const month = String(current.month).padStart(2, '0');
+    input.setValue(`${day}/${month}${current.year ? `/${current.year}` : ''}`);
   }
   return new ModalBuilder().setCustomId(ID.modalDate).setTitle('Ton anniversaire').addLabelComponents(
     new LabelBuilder()
@@ -222,8 +206,6 @@ const mediaLinkModal = () => new ModalBuilder().setCustomId(ID.modalMediaLink).s
       .setRequired(true).setMaxLength(MAX_URL_LENGTH).setPlaceholder('https://…')),
 );
 
-// ───────────────────────── Média: menu, GIF via messages privés ─────────────────────────
-
 const mediaMenu = () => screen(
   '### 🖼️ Ajouter un média\nChoisis comment ajouter ton GIF, ta photo ou ta vidéo. Tu peux revenir en arrière sans rien changer.',
   row(
@@ -243,10 +225,8 @@ const gifSearchModal = (provider) => new ModalBuilder().setCustomId(provider.mod
       .setRequired(true).setMaxLength(50).setPlaceholder(`Search ${provider.name}`)),
 );
 
-// Grille façon sélecteur Discord: 4 GIF à la fois (galerie de médias V2), tendances par défaut,
-// la recherche remplace la liste. Résultats gardés en mémoire le temps du choix (redémarrage = nouvelle recherche).
+// Les résultats restent en mémoire pendant la recherche.
 const GIFS_PER_PAGE = 4;
-// Raccourcis façon tuiles du sélecteur Discord: libellé affiché → mot recherché ('' = tendances).
 const GIF_CATEGORIES = [
   { label: 'À la une', emoji: '🔥', value: '' },
   { label: 'Joyeux anniversaire', emoji: '🎂', value: 'joyeux anniversaire' },
@@ -276,18 +256,18 @@ function gifScreen(state, provider) {
     before: [
       row(button(provider.query, 'Rechercher un GIF', '🔍', ButtonStyle.Primary)),
       row(new StringSelectMenuBuilder().setCustomId(provider.category).setPlaceholder('Catégories: fête, LOL, amour…')
-        .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
+        .addOptions(GIF_CATEGORIES.map((category) => ({ label: category.label, emoji: category.emoji, value: category.value || 'trending' })))),
     ],
     media: shown.map((gif) => gif.preview),
     rows: [
-      row(...shown.slice(0, 2).map((_, k) => button(provider.pick[k], String(k + 1), null, ButtonStyle.Success))),
-      ...(shown.length > 2 ? [row(...shown.slice(2, 4).map((_, k) => button(provider.pick[k + 2], String(k + 3), null, ButtonStyle.Success)))] : []),
+      row(...shown.slice(0, 2).map((_, index) => button(provider.pick[index], String(index + 1), null, ButtonStyle.Success))),
+      ...(shown.length > 2 ? [row(...shown.slice(2, 4).map((_, index) => button(provider.pick[index + 2], String(index + 3), null, ButtonStyle.Success)))] : []),
       row(
         button(provider.prev, 'Précédents', '◀️'),
         button(provider.next, 'Suivants', '▶️'),
         button(ID.mediaBack, 'Retour aux médias', '↩️'),
       ),
-      ...(Object.values(providers).filter((p) => p !== provider && p.enabled()).map((p) => row(button(p.open, `Voir ${p.name}`, '🔄')))),
+      ...(Object.values(providers).filter((other) => other !== provider && other.enabled()).map((other) => row(button(other.open, `Voir ${other.name}`, '🔄')))),
     ],
     footer: `-# Choisis un numéro : 1 et 2 en haut, 3 et 4 en bas · Powered by ${provider.name}`,
   });
@@ -299,9 +279,7 @@ const liveGifSearch = (i, provider) => {
   return state && state.exp > Date.now() ? state : null;
 };
 
-// Le sélecteur GIF/stickers de Discord n'existe que dans la zone de message, pas dans les fenêtres de
-// saisie. On le fait donc utiliser en message privé avec le bot (le contenu des MP est lisible sans
-// intention privilégiée), puis on récupère le GIF envoyé et on met à jour le message du tableau de bord.
+// Le sélecteur Discord n'existe pas dans les fenêtres de saisie : le GIF est envoyé en MP.
 
 const gifSessions = new Map(); // userId -> {guildId, interaction, exp}
 
@@ -351,7 +329,7 @@ async function mediaFromDirectMessage(message, guildId) {
   return url ? { path: null, name: null, url } : null;
 }
 
-/** Messages privés reçus: récupère le GIF/média d'une session ouverte depuis le tableau de bord. */
+// Traite le média reçu pendant une session ouverte depuis le tableau de bord.
 export async function handleDirectMessage(message) {
   if (message.guild || message.author.bot) return;
   const session = gifSessions.get(message.author.id);
@@ -390,24 +368,19 @@ export async function handleDirectMessage(message) {
   }).catch(() => {});
 }
 
-// ───────────────────────── Liste des prochains anniversaires ─────────────────────────
-
 export function upcomingText(guildId) {
   const today = nowIn(getGuildConfig(guildId)?.timezone ?? DEFAULT_TZ);
   const next = listBirthdays(guildId)
-    .map((b) => ({ b, in: daysUntil(b, today) }))
-    .sort((a, b) => a.in - b.in)
+    .map((birthday) => ({ birthday, days: daysUntil(birthday, today) }))
+    .sort((a, b) => a.days - b.days)
     .slice(0, 10);
   if (next.length === 0) return 'Aucun anniversaire enregistré pour l\'instant. Sois le premier ! 🎂';
-  return next.map(({ b, in: d }) => {
-    const when = d === 0 ? '**aujourd\'hui** 🎉' : d === 1 ? 'demain' : `dans ${d} jours`;
-    return `• <@${b.user_id}> — ${formatDate({ ...b, year: null })} (${when})`;
+  return next.map(({ birthday, days }) => {
+    const when = days === 0 ? '**aujourd\'hui** 🎉' : days === 1 ? 'demain' : `dans ${days} jours`;
+    return `• <@${birthday.user_id}> — ${formatDate({ ...birthday, year: null })} (${when})`;
   }).join('\n');
 }
 
-// ───────────────────────── Routage ─────────────────────────
-
-/** Ouvre le parcours: fenêtre de date pour un nouveau, tableau de bord pour un inscrit. */
 export async function openFlow(i) {
   if (!getBirthday(i.guildId, i.user.id)) return i.showModal(dateModal(null));
   return i.reply(ephemeral(dash(i)));
@@ -424,7 +397,7 @@ async function saveDate(i, { day, month, year }) {
   return respond(i, dash(i, { notice: existed ? null : '✅ C\'est enregistré ! Tu peux maintenant personnaliser ton message ⬇️' }));
 }
 
-/** Enregistre un média déjà prêt (après `deferUpdate`), supprime l'ancien fichier, rafraîchit le tableau de bord. */
+// Prépare le média avant de remplacer l'ancien.
 async function applyMedia(i, produce) {
   await i.deferUpdate();
   let media;
@@ -446,13 +419,13 @@ const gifExpired = (provider) => screen('### ⌛ Cette recherche a expiré\nRela
 function gifStep(i, provider, delta) {
   const state = liveGifSearch(i, provider);
   if (!state) return respond(i, gifExpired(provider));
-  const n = gifPageCount(state);
-  state.page = (state.page + delta + n) % n;
+  const pageCount = gifPageCount(state);
+  state.page = (state.page + delta + pageCount) % pageCount;
   state.exp = Date.now() + SESSION_TTL_MS;
   return respond(i, gifScreen(state, provider));
 }
 
-/** Charge la liste (tendances si `query` est nul), ouvre la grille; erreurs expliquées avec rebond possible. */
+// Sans recherche, affiche les GIF tendance.
 async function showGifGrid(i, provider, query) {
   await i.deferUpdate();
   if (!provider.enabled()) {
@@ -482,7 +455,7 @@ async function pickGif(i, provider, slot) {
   const previous = getBirthday(i.guildId, i.user.id);
   setBirthdayMedia(i.guildId, i.user.id, { path: null, name: null, url: gif.url });
   await removeMediaFile(previous?.media_path);
-  for (const p of Object.values(providers)) gifSearches.delete(gifKey(i, p));
+  for (const other of Object.values(providers)) gifSearches.delete(gifKey(i, other));
   return respond(i, dash(i, { notice: '✅ GIF enregistré.' }));
 }
 
@@ -559,9 +532,9 @@ const actions = {
     return { path: null, name: null, url };
   }),
   async [ID.mediaRemove](i) {
-    const b = getBirthday(i.guildId, i.user.id);
+    const birthday = getBirthday(i.guildId, i.user.id);
     setBirthdayMedia(i.guildId, i.user.id, null);
-    await removeMediaFile(b?.media_path);
+    await removeMediaFile(birthday?.media_path);
     return respond(i, dash(i, { notice: '🚫 Média retiré.' }));
   },
 
@@ -571,14 +544,14 @@ const actions = {
     row(button(ID.delConfirm, 'Oui, supprimer', '🗑️', ButtonStyle.Danger), button(ID.back, 'Non, garder', '↩️')),
   )),
   async [ID.delConfirm](i) {
-    const b = getBirthday(i.guildId, i.user.id);
-    await removeMediaFile(b?.media_path);
+    const birthday = getBirthday(i.guildId, i.user.id);
+    await removeMediaFile(birthday?.media_path);
     deleteBirthday(i.guildId, i.user.id);
     return respond(i, screen('🗑️ C\'est fait, tout est supprimé. Tu peux revenir quand tu veux !'));
   },
 };
 
-/** Boutons, listes et fenêtres du parcours (customId `bday:*`). Retourne false si l'interaction n'est pas pour nous. */
+// Ignore les interactions qui ne correspondent pas au panneau.
 export async function handlePanelInteraction(i) {
   if (!(i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) || !i.guildId) return false;
   const action = actions[i.customId];

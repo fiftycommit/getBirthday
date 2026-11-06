@@ -22,8 +22,6 @@ const modal = (customId, fields, extra = {}) => run({ kind: 'modal', customId, f
 const ids = (payload) => view(payload).ids;
 const eph = { fromEphemeral: true };
 
-// ── Date ──
-
 test('nouveau membre: le bouton du panneau ouvre la saisie de date, rien n\'est créé', async () => {
   const f = await button(ID.open, { guildId: 'd1' });
   assert.equal(f.last('showModal').data.custom_id, ID.modalDate);
@@ -58,8 +56,6 @@ test('« Changer la date »: fenêtre préremplie; l\'envoi met à jour le table
   assert.equal(db.getBirthday('d5', 'U').month, 3);
 });
 
-// ── Texte ──
-
 test('texte: le champ montre le défaut; le garder ou le vider suit le défaut, un texte perso est stocké', async () => {
   db.setBirthdayDate('t1', 'U', 6, 11, 2000);
   const open = await button(ID.text, { guildId: 't1', ...eph });
@@ -93,8 +89,6 @@ test('aperçu: l\'âge est celui de la prochaine occurrence, variables rendues',
   assert.match(view(f.last('reply')).content, new RegExp(`> User aura ${expected} ans`));
 });
 
-// ── Aperçu V2 ──
-
 test('tableau de bord en Components V2: aperçu animé du GIF Giphy, du fichier joint, rien pour un lien opaque', async () => {
   db.setBirthdayDate('v1', 'U', 6, 11, null);
   const open = async () => (await button(ID.open, { guildId: 'v1' })).last('reply');
@@ -116,8 +110,6 @@ test('tableau de bord en Components V2: aperçu animé du GIF Giphy, du fichier 
   assert.deepEqual(view(withFile).media, ['attachment://anniversaire.gif']);
   assert.equal(withFile.files.length, 1);
 });
-
-// ── Média ──
 
 test('média: le menu propose GIF, appareil, lien; chaque choix ouvre la bonne fenêtre', async () => {
   db.setBirthdayDate('m1', 'U', 6, 11, null);
@@ -164,8 +156,6 @@ test('média par fichier: type non supporté ou trop lourd refusé sans rien cha
   assert.match(view(big.last('editReply')).content, /trop lourd/);
   assert.equal(db.getBirthday('m4', 'U').media_path, null);
 });
-
-// ── GIF: recherche KLIPY ──
 
 const gifJson = (n) => ({ ok: true, status: 200, json: async () => ({ result: true, data: { data: Array.from({ length: n }, (_, k) => ({
   id: k, slug: `g${k}`, title: `t${k}`, file: { hd: { gif: { url: `https://static.klipy.com/g${k}/full.gif` } }, xs: { gif: { url: `https://static.klipy.com/g${k}/small.gif` } } },
@@ -368,8 +358,6 @@ test('GIF: erreurs GIPHY sans bascule ni modification du média enregistré', as
   }
 });
 
-// ── GIF via messages privés ──
-
 const dmMessage = ({ userId = 'U', content = '', stickers = [], attachments = [] } = {}) => {
   const replies = [];
   return {
@@ -445,8 +433,6 @@ test('annuler la demande GIF en MP empêche un envoi ultérieur de modifier le m
   await handleDirectMessage(dmMessage({ content: 'https://tenor.com/view/unwanted' }));
   assert.equal(db.getBirthday('nav-dm', 'U').media_url, null);
 });
-
-// ── Suppression, isolation, admin ──
 
 test('suppression: confirmation obligatoire, « Non, garder » ramène au tableau de bord', async () => {
   db.setBirthdayDate('x1', 'U', 6, 11, null);
