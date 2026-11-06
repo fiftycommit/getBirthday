@@ -6,7 +6,7 @@ import { Collection } from 'discord.js';
 import { fakeInteraction, useTempDataDir, view } from './helpers.js';
 
 useTempDataDir();
-process.env.GIPHY_API_KEY = 'test-key';
+process.env.KLIPY_API_KEY = 'test-key';
 const db = await import('../src/db.js');
 const { handleInteraction } = await import('../src/commands.js');
 const { ID, handleDirectMessage } = await import('../src/panel.js');
@@ -156,22 +156,22 @@ test('média par fichier: type non supporté ou trop lourd refusé sans rien cha
   assert.equal(db.getBirthday('m4', 'U').media_path, null);
 });
 
-// ── GIF: recherche Giphy ──
+// ── GIF: recherche KLIPY ──
 
-const gifJson = (n) => ({ ok: true, status: 200, json: async () => ({ data: Array.from({ length: n }, (_, k) => ({
-  id: `g${k}`, url: `https://giphy.com/gifs/party-g${k}`, title: `t${k}`, images: { fixed_height_small: { url: `https://media.giphy.com/g${k}/100.gif` } },
-})) }) });
+const gifJson = (n) => ({ ok: true, status: 200, json: async () => ({ result: true, data: { data: Array.from({ length: n }, (_, k) => ({
+  id: k, slug: `g${k}`, title: `t${k}`, file: { hd: { gif: { url: `https://static.klipy.com/g${k}/full.gif` } }, xs: { gif: { url: `https://static.klipy.com/g${k}/small.gif` } } },
+})) } }) });
 const withFetch = async (impl, fn) => {
   const m = mock.method(globalThis, 'fetch', impl);
   try { return await fn(m); } finally { m.mock.restore(); }
 };
 
-test('GIF: le menu média propose la recherche seulement si la clé Giphy est configurée', async () => {
+test('GIF: le menu média propose la recherche seulement si la clé KLIPY est configurée', async () => {
   db.setBirthdayDate('s0', 'U', 6, 11, null);
   assert.ok(ids((await button(ID.media, { guildId: 's0', ...eph })).last('update')).includes(ID.gifSearch));
-  delete process.env.GIPHY_API_KEY;
+  delete process.env.KLIPY_API_KEY;
   assert.ok(!ids((await button(ID.media, { guildId: 's0', ...eph })).last('update')).includes(ID.gifSearch));
-  process.env.GIPHY_API_KEY = 'test-key';
+  process.env.KLIPY_API_KEY = 'test-key';
 });
 
 test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en boucle, choix par numéro', async () => {
@@ -181,22 +181,28 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     const open = await button(ID.gifSearch, g);
     assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
     const first = open.last('editReply');
-    assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/100.gif`));
+    assert.deepEqual(view(first).media, [0, 1, 2, 3].map((k) => `https://static.klipy.com/g${k}/small.gif`));
     assert.match(view(first).content, /GIF recommandés/);
     assert.match(view(first).content, /Page 1\/2/);
-    assert.match(view(first).content, /Powered by GIPHY/);
+    assert.match(view(first).content, /Powered by KLIPY/);
     assert.equal(first.flags & 32768, 32768); // Components V2
     assert.deepEqual(ids(first), [ID.gifQuery, ID.gifCategory, ...ID.gifPick, ID.gifPrev, ID.gifNext, ID.back]);
-    assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/trending\?.*rating=g/);
+    const url = new URL(fetchMock.mock.calls[0].arguments[0]);
+    assert.equal(url.origin + url.pathname, 'https://api.klipy.com/api/v1/test-key/gifs/trending');
+    assert.equal(url.searchParams.get('customer_id'), 'U');
+    assert.equal(url.searchParams.get('per_page'), '24');
+    assert.equal(url.searchParams.get('format_filter'), 'gif');
+    assert.equal(url.searchParams.get('content_filter'), 'high');
+    assert.equal(url.searchParams.get('locale'), 'fr');
 
     assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 2\/2/);
     assert.match(view((await button(ID.gifNext, g)).last('update')).content, /Page 1\/2/); // boucle
     await button(ID.gifPrev, g); // page 2
 
     const pick = await button(ID.gifPick[1], g); // 2e GIF de la page 2 → g5
-    assert.equal(db.getBirthday('s1', 'U').media_url, 'https://giphy.com/gifs/party-g5');
-    assert.deepEqual(view(pick.last('update')).media, ['https://media.giphy.com/media/g5/giphy.gif']); // aperçu animé du GIF choisi
-    assert.match(view(pick.last('update')).content, /> https:\/\/giphy\.com\/gifs\/party-g5/);
+    assert.equal(db.getBirthday('s1', 'U').media_url, 'https://static.klipy.com/g5/full.gif');
+    assert.deepEqual(view(pick.last('update')).media, ['https://static.klipy.com/g5/full.gif']);
+    assert.match(view(pick.last('update')).content, /> https:\/\/static\.klipy\.com\/g5\/full\.gif/);
 
     await button(ID.gifSearch, g); // tendances servies par le cache: pas de nouvel appel
     assert.equal(fetchMock.mock.callCount(), 1);
@@ -235,7 +241,7 @@ test('GIF: les catégories (tuiles façon Discord) lancent la bonne recherche, �
   });
 });
 
-test('GIF: aucun résultat, quota dépassé, Giphy injoignable → messages clairs, rien d\'enregistré', async () => {
+test('GIF: aucun résultat, quota dépassé, KLIPY injoignable → messages clairs, rien d\'enregistré', async () => {
   db.setBirthdayDate('s2', 'U', 6, 11, null);
   const g = { guildId: 's2', ...eph };
   const none = await withFetch(async () => gifJson(0), () => modal(ID.modalGif, { query: 'zzzaucun' }, g));
@@ -245,6 +251,21 @@ test('GIF: aucun résultat, quota dépassé, Giphy injoignable → messages clai
   const down = await withFetch(async () => { throw new Error('network'); }, () => modal(ID.modalGif, { query: 'panne' }, g));
   assert.match(view(down.last('editReply')).content, /ne répond pas/);
   assert.equal(db.getBirthday('s2', 'U').media_url, null);
+});
+
+test('GIF: réponse KLIPY invalide signalée sans enregistrer de média', async () => {
+  db.setBirthdayDate('s-invalid', 'U', 6, 11, null);
+  const g = { guildId: 's-invalid', ...eph };
+  for (const [query, body] of [
+    ['malforme', { result: true, data: {} }],
+    ['echec', { result: false, data: { data: [] } }],
+    ['sansmedia', { result: true, data: { data: [{ id: 1, file: {} }] } }],
+  ]) {
+    const response = await withFetch(async () => ({ ok: true, status: 200, json: async () => body }),
+      () => modal(ID.modalGif, { query }, g));
+    assert.match(view(response.last('editReply')).content, /réponse invalide/);
+  }
+  assert.equal(db.getBirthday('s-invalid', 'U').media_url, null);
 });
 
 test('GIF: choisir sans recherche active (expirée / redémarrage) → écran « expirée »', async () => {
