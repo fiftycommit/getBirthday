@@ -151,29 +151,48 @@ test('GIF: le menu média propose la recherche seulement si la clé Giphy est co
   process.env.GIPHY_API_KEY = 'test-key';
 });
 
-test('GIF: recherche → aperçu, ◀ ▶ en boucle, « Celui-là » enregistre le lien et revient au tableau de bord', async () => {
+test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en boucle, choix par numéro', async () => {
   db.setBirthdayDate('s1', 'U', 6, 11, null);
   const g = { guildId: 's1', ...eph };
-  await withFetch(async () => gifJson(3), async (fetchMock) => {
-    assert.equal((await button(ID.gifSearch, g)).last('showModal').data.custom_id, ID.modalGif);
+  await withFetch(async () => gifJson(8), async (fetchMock) => {
+    const open = await button(ID.gifSearch, g);
+    assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
+    const first = open.last('editReply');
+    assert.equal(first.embeds.length, 4);
+    assert.deepEqual(first.embeds.map((e) => e.data.image.url), [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/200.gif`));
+    assert.match(first.embeds[0].data.title, /recommandés — page 1\/2/);
+    assert.equal(first.embeds[0].data.footer.text, 'Powered by GIPHY');
+    assert.deepEqual(ids(first), [...ID.gifPick, ID.gifPrev, ID.gifNext, ID.gifQuery, ID.back]);
+    assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/trending\?.*rating=g/);
 
+    assert.match((await button(ID.gifNext, g)).last('update').embeds[0].data.title, /page 2\/2/);
+    assert.match((await button(ID.gifNext, g)).last('update').embeds[0].data.title, /page 1\/2/); // boucle
+    await button(ID.gifPrev, g); // page 2
+
+    const pick = await button(ID.gifPick[1], g); // 2e GIF de la page 2 → g5
+    assert.equal(db.getBirthday('s1', 'U').media_url, 'https://giphy.com/gifs/party-g5');
+    assert.deepEqual(pick.last('update').embeds, []); // la grille disparaît du tableau de bord
+    assert.match(pick.last('update').content, /> https:\/\/giphy\.com\/gifs\/party-g5/);
+
+    await button(ID.gifSearch, g); // tendances servies par le cache: pas de nouvel appel
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+});
+
+test('GIF: la recherche remplace les recommandés (mot normalisé, mis en cache)', async () => {
+  db.setBirthdayDate('s4', 'U', 6, 11, null);
+  const g = { guildId: 's4', ...eph };
+  await withFetch(async () => gifJson(5), async (fetchMock) => {
+    assert.equal((await button(ID.gifQuery, g)).last('showModal').data.custom_id, ID.modalGif);
     const found = await modal(ID.modalGif, { query: 'Fête  Surprise' }, g);
-    assert.deepEqual(found.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
-    assert.equal(embedOf(found.last('editReply')).image.url, 'https://media.giphy.com/g0/200.gif');
-    assert.match(embedOf(found.last('editReply')).title, /1\/3/);
-    assert.equal(embedOf(found.last('editReply')).footer.text, 'Powered by GIPHY');
-    assert.match(fetchMock.mock.calls[0].arguments[0], /rating=g/);
+    assert.match(found.last('editReply').embeds[0].data.title, /« fête surprise »|« Fête  Surprise »/);
+    assert.equal(found.last('editReply').embeds.length, 4);
+    assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/search\?.*q=f%C3%AAte\+surprise/);
 
-    assert.match(embedOf((await button(ID.gifNext, g)).last('update')).title, /2\/3/);
-    assert.match(embedOf((await button(ID.gifPrev, g)).last('update')).title, /1\/3/);
-    assert.match(embedOf((await button(ID.gifPrev, g)).last('update')).title, /3\/3/); // boucle
+    const lastPage = await button(ID.gifNext, g); // 5 résultats → page 2 n'a qu'un GIF
+    assert.equal(lastPage.last('update').embeds.length, 1);
+    assert.deepEqual(ids(lastPage.last('update')).slice(0, 2), [ID.gifPick[0], ID.gifPrev]);
 
-    const pick = await button(ID.gifPick, g);
-    assert.equal(db.getBirthday('s1', 'U').media_url, 'https://giphy.com/gifs/party-g2');
-    assert.deepEqual(pick.last('update').embeds, []); // l'aperçu GIF disparaît du tableau de bord
-    assert.match(pick.last('update').content, /> https:\/\/giphy\.com\/gifs\/party-g2/);
-
-    // même recherche (casse/espaces différents): servie par le cache, pas de nouvel appel API
     await modal(ID.modalGif, { query: 'fête surprise' }, g);
     assert.equal(fetchMock.mock.callCount(), 1);
   });
@@ -193,7 +212,7 @@ test('GIF: aucun résultat, quota dépassé, Giphy injoignable → messages clai
 
 test('GIF: choisir sans recherche active (expirée / redémarrage) → écran « expirée »', async () => {
   db.setBirthdayDate('s3', 'U', 6, 11, null);
-  const f = await button(ID.gifPick, { guildId: 's3', ...eph });
+  const f = await button(ID.gifPick[0], { guildId: 's3', ...eph });
   assert.match(f.last('update').content, /expiré/);
   assert.equal(db.getBirthday('s3', 'U').media_url, null);
 });
