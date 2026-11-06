@@ -1,10 +1,32 @@
+name: getbirthday
+
 services:
   bot:
+    # `build` pour le dev local; en prod l'image est construite par la CI puis chargée (voir scripts/deploy.sh).
     build: .
+    image: getbirthday:current
     restart: unless-stopped
+    init: true
     env_file: .env
+    # UID/GID du propriétaire de ./data sur l'hôte (BOT_UID/BOT_GID dans .env).
+    user: "${BOT_UID:-1000}:${BOT_GID:-1000}"
     environment:
-      NODE_NO_WARNINGS: "1"
       TZ: Europe/Paris
     volumes:
       - ./data:/app/data
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$$(find /tmp/healthy -mmin -2 2>/dev/null)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

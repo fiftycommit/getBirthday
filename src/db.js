@@ -75,3 +75,8 @@ export function saveGuildConfig(g, patch) {
   q.upsertConfig.run(g, next.channel_id, next.hour, next.timezone, next.default_message);
   return next;
 }
+
+/** Copie cohérente de la base (WAL inclus) vers `target`, qui ne doit pas exister. */
+export function snapshotDb(target) {
+  db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+}
