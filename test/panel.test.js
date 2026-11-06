@@ -135,7 +135,7 @@ test('média par fichier: type non supporté ou trop lourd refusé sans rien cha
 // ── GIF: recherche Giphy ──
 
 const gifJson = (n) => ({ ok: true, status: 200, json: async () => ({ data: Array.from({ length: n }, (_, k) => ({
-  id: `g${k}`, url: `https://giphy.com/gifs/party-g${k}`, title: `t${k}`, images: { fixed_height: { url: `https://media.giphy.com/g${k}/200.gif` } },
+  id: `g${k}`, url: `https://giphy.com/gifs/party-g${k}`, title: `t${k}`, images: { fixed_height_small: { url: `https://media.giphy.com/g${k}/100.gif` } },
 })) }) });
 const withFetch = async (impl, fn) => {
   const m = mock.method(globalThis, 'fetch', impl);
@@ -159,10 +159,10 @@ test('GIF: l\'écran s\'ouvre sur les GIF recommandés (grille de 4), pages en b
     assert.deepEqual(open.calls.map((c) => c.type), ['deferUpdate', 'editReply']);
     const first = open.last('editReply');
     assert.equal(first.embeds.length, 4);
-    assert.deepEqual(first.embeds.map((e) => e.data.image.url), [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/200.gif`));
+    assert.deepEqual(first.embeds.map((e) => e.data.image.url), [0, 1, 2, 3].map((k) => `https://media.giphy.com/g${k}/100.gif`));
     assert.match(first.embeds[0].data.title, /recommandés — page 1\/2/);
     assert.equal(first.embeds[0].data.footer.text, 'Powered by GIPHY');
-    assert.deepEqual(ids(first), [...ID.gifPick, ID.gifPrev, ID.gifNext, ID.gifQuery, ID.back]);
+    assert.deepEqual(ids(first), [...ID.gifPick, ID.gifCategory, ID.gifPrev, ID.gifNext, ID.gifQuery, ID.back]);
     assert.match(fetchMock.mock.calls[0].arguments[0], /gifs\/trending\?.*rating=g/);
 
     assert.match((await button(ID.gifNext, g)).last('update').embeds[0].data.title, /page 2\/2/);
@@ -191,10 +191,23 @@ test('GIF: la recherche remplace les recommandés (mot normalisé, mis en cache)
 
     const lastPage = await button(ID.gifNext, g); // 5 résultats → page 2 n'a qu'un GIF
     assert.equal(lastPage.last('update').embeds.length, 1);
-    assert.deepEqual(ids(lastPage.last('update')).slice(0, 2), [ID.gifPick[0], ID.gifPrev]);
+    assert.deepEqual(ids(lastPage.last('update')).slice(0, 2), [ID.gifPick[0], ID.gifCategory]);
 
     await modal(ID.modalGif, { query: 'fête surprise' }, g);
     assert.equal(fetchMock.mock.callCount(), 1);
+  });
+});
+
+test('GIF: les catégories (tuiles façon Discord) lancent la bonne recherche, « À la une » revient aux tendances', async () => {
+  db.setBirthdayDate('s5', 'U', 6, 11, null);
+  const g = { guildId: 's5', ...eph };
+  await withFetch(async () => gifJson(6), async (fetchMock) => {
+    await button(ID.gifSearch, g);
+    const cat = await run({ kind: 'select', customId: ID.gifCategory, values: ['joyeux anniversaire'], ...g });
+    assert.match(cat.last('editReply').embeds[0].data.title, /« joyeux anniversaire »/);
+    assert.match(fetchMock.mock.calls.at(-1).arguments[0], /gifs\/search\?.*q=joyeux\+anniversaire/);
+    const top = await run({ kind: 'select', customId: ID.gifCategory, values: ['trending'], ...g });
+    assert.match(top.last('editReply').embeds[0].data.title, /recommandés/);
   });
 });
 

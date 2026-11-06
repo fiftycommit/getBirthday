@@ -31,7 +31,7 @@ async function fetchList(cacheKey, endpoint, extra) {
   const results = data.map((g) => ({
     id: g.id,
     url: g.url, // page Giphy: Discord la déplie en GIF animé
-    preview: g.images.fixed_height.url,
+    preview: g.images.fixed_height_small.url, // ~100 px: léger, la grille de 4 GIF se charge vite
     title: g.title,
   }));
 

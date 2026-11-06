@@ -2,7 +2,7 @@
 // (message éphémère) qui se met à jour sur place et montre toujours l'aperçu exact de l'annonce.
 import {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, FileUploadBuilder, LabelBuilder,
-  MessageFlags, ModalBuilder, StickerFormatType, TextInputBuilder,
+  MessageFlags, ModalBuilder, StickerFormatType, StringSelectMenuBuilder, TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
 import { buildAnnouncement } from './announce.js';
@@ -33,6 +33,7 @@ export const ID = {
   mediaGif: 'bday:media-gif',
   gifSearch: 'bday:gif-search',
   gifQuery: 'bday:gif-query',
+  gifCategory: 'bday:gif-category',
   gifPrev: 'bday:gif-prev',
   gifNext: 'bday:gif-next',
   gifPick: ['bday:gif-pick-0', 'bday:gif-pick-1', 'bday:gif-pick-2', 'bday:gif-pick-3'],
@@ -208,6 +209,17 @@ const gifSearchModal = () => new ModalBuilder().setCustomId(ID.modalGif).setTitl
 // Grille façon sélecteur Discord: 4 GIF à la fois (embeds de même URL = galerie), tendances par défaut,
 // la recherche remplace la liste. Résultats gardés en mémoire le temps du choix (redémarrage = nouvelle recherche).
 const GIFS_PER_PAGE = 4;
+// Raccourcis façon tuiles du sélecteur Discord: libellé affiché → mot recherché ('' = tendances).
+const GIF_CATEGORIES = [
+  { label: 'À la une', emoji: '🔥', value: '' },
+  { label: 'Joyeux anniversaire', emoji: '🎂', value: 'joyeux anniversaire' },
+  { label: 'Fête', emoji: '🎉', value: 'fête' },
+  { label: 'Félicitations', emoji: '🥳', value: 'félicitations' },
+  { label: 'LOL', emoji: '😂', value: 'lol' },
+  { label: 'Amour', emoji: '❤️', value: 'love' },
+  { label: 'Hello', emoji: '👋', value: 'hello' },
+  { label: 'Merci', emoji: '🙏', value: 'merci' },
+];
 const gifSearches = new Map(); // `${guild}:${user}` -> {query|null, results, page, exp}
 
 const gifPageCount = (state) => Math.ceil(state.results.length / GIFS_PER_PAGE);
@@ -226,6 +238,8 @@ function gifScreen(state) {
     ...screen(
       'Clique sur le **numéro** du GIF que tu veux (1 2 en haut, 3 4 en bas), ou cherche un mot précis.',
       row(...picks),
+      row(new StringSelectMenuBuilder().setCustomId(ID.gifCategory).setPlaceholder('Catégories')
+        .addOptions(GIF_CATEGORIES.map((c) => ({ label: c.label, emoji: c.emoji, value: c.value || 'trending' })))),
       row(
         button(ID.gifPrev, 'Précédents', '◀️'),
         button(ID.gifNext, 'Suivants', '▶️'),
@@ -455,6 +469,7 @@ const actions = {
   // Média
   [ID.media]: withBirthday((i) => respond(i, mediaMenu())),
   [ID.gifSearch]: withBirthday((i) => showGifGrid(i, null)),
+  [ID.gifCategory]: (i) => showGifGrid(i, i.values[0] === 'trending' ? null : i.values[0]),
   [ID.gifQuery]: withBirthday((i) => i.showModal(gifSearchModal())),
   [ID.modalGif]: (i) => showGifGrid(i, i.fields.getTextInputValue('query').trim()),
   [ID.gifPrev]: (i) => gifStep(i, -1),
@@ -494,9 +509,9 @@ const actions = {
   },
 };
 
-/** Boutons et fenêtres du parcours (customId `bday:*`). Retourne false si l'interaction n'est pas pour nous. */
+/** Boutons, listes et fenêtres du parcours (customId `bday:*`). Retourne false si l'interaction n'est pas pour nous. */
 export async function handlePanelInteraction(i) {
-  if (!(i.isButton() || i.isModalSubmit()) || !i.guildId) return false;
+  if (!(i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) || !i.guildId) return false;
   const action = actions[i.customId];
   if (!action) return false;
   await action(i);
