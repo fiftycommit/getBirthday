@@ -42,6 +42,7 @@ export function fakeInteraction({
     options: { getChannel: get, getInteger: get, getString: get, getBoolean: get },
     fields: {
       getTextInputValue: (k) => fields[k] ?? '',
+      getStringSelectValues: (k) => [].concat(fields[k] ?? []).map(String),
       getUploadedFiles: () => (files ? new Collection(files.map((f, n) => [String(n), f])) : null),
     },
     reply: rec('reply'), update: rec('update'), showModal: rec('showModal'),

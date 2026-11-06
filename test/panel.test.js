@@ -16,73 +16,70 @@ const run = async (args) => {
   return f;
 };
 const button = (customId, extra = {}) => run({ kind: 'button', customId, ...extra });
-const select = (customId, value, extra = {}) => run({ kind: 'select', customId, values: [String(value)], fromEphemeral: true, ...extra });
 const modal = (customId, fields, extra = {}) => run({ kind: 'modal', customId, fields, ...extra });
 const ids = (payload) => payload.components.flatMap((r) => r.components.map((c) => c.data.custom_id).filter(Boolean));
 const eph = { fromEphemeral: true };
 
 // ── Date ──
 
-test('nouveau membre: le bouton du panneau ouvre le sélecteur de date, rien n\'est créé', async () => {
+const dateModalFields = (modal) => modal.toJSON().components.map((c) => c.component);
+
+test('nouveau membre: le bouton du panneau ouvre UNE fenêtre (mois en liste, jour, année facultative), rien n\'est créé', async () => {
   const f = await button(ID.open, { guildId: 'd1' });
-  assert.deepEqual(ids(f.last('reply')), [ID.pickMonth, ID.pickDayA, ID.pickDayB, ID.pickYear, ID.dateType, ID.pickOk]);
-  assert.equal(f.last('reply').components[3].components[2].data.disabled, true); // « Valider » inactif
+  const [month, day, year] = dateModalFields(f.last('showModal'));
+  assert.equal(f.last('showModal').data.custom_id, ID.modalDate);
+  assert.equal(month.options.length, 12);
+  assert.equal(day.required, true);
+  assert.equal(year.required, false);
   assert.equal(db.getBirthday('d1', 'U'), undefined);
 });
 
-test('sélecteur: mois + jour (liste 1-15 ou 16-31) puis Valider enregistre et ouvre le tableau de bord', async () => {
-  const g = { guildId: 'd2' };
-  await button(ID.open, g);
-  await select(ID.pickMonth, 11, g);
-  const afterDay = await select(ID.pickDayB, 20, g);
-  const valider = afterDay.last('update').components[3].components[2];
-  assert.equal(valider.data.disabled, false);
-  assert.match(afterDay.last('update').content, /novembre · \*\*Jour:\*\* 20/);
-
-  const ok = await button(ID.pickOk, { ...g, ...eph });
-  assert.deepEqual(db.getBirthday('d2', 'U') && [db.getBirthday('d2', 'U').day, db.getBirthday('d2', 'U').month], [20, 11]);
-  assert.match(ok.last('update').content, /20 novembre/);
-  assert.ok(ids(ok.last('update')).includes(ID.text));
-});
-
-test('sélecteur: année facultative (4 chiffres), dates impossibles refusées', async () => {
-  const g = { guildId: 'd3' };
-  await select(ID.pickMonth, 4, g);
-  await select(ID.pickDayB, 31, g); // 31 avril
-  assert.match((await button(ID.pickOk, { ...g, ...eph })).last('update').content, /❌ Jour invalide/);
-  assert.equal(db.getBirthday('d3', 'U'), undefined);
-
-  await select(ID.pickMonth, 2, g);
-  await select(ID.pickDayB, 29, g);
-  assert.match((await modal(ID.modalYear, { year: '20x1' }, { ...g, ...eph })).last('update').content, /4 chiffres/);
-  await modal(ID.modalYear, { year: '2001' }, { ...g, ...eph });
-  assert.match((await button(ID.pickOk, { ...g, ...eph })).last('update').content, /bissextile/);
-  await modal(ID.modalYear, { year: '' }, { ...g, ...eph }); // sans année: 29/02 accepté
-  await button(ID.pickOk, { ...g, ...eph });
-  assert.equal(db.getBirthday('d3', 'U').year, null);
-  assert.equal(db.getBirthday('d3', 'U').day, 29);
-});
-
-test('saisie libre toujours possible: bouton « Écrire la date », formats variés, erreurs claires', async () => {
-  assert.equal((await button(ID.dateType, { guildId: 'd4', ...eph })).last('showModal').data.custom_id, ID.modalDate);
-
-  const f = await modal(ID.modalDate, { date: '6 novembre 2000' }, { guildId: 'd4' }); // depuis le panneau public
+test('date envoyée depuis le panneau: enregistrée, nouveau message privé avec aperçu et actions', async () => {
+  const f = await modal(ID.modalDate, { month: 11, day: '6', year: '2000' }, { guildId: 'd2' });
   assert.deepEqual(f.calls.map((c) => c.type), ['reply']);
-  assert.match(f.last('reply').content, /> 🎂 Joyeux anniversaire <@U>/);
-
-  for (const date of ['31/02', 'blabla', '29/02/2001']) {
-    const bad = await modal(ID.modalDate, { date }, { guildId: 'd5' });
-    assert.match(bad.last('reply').content, /❌/);
-    assert.deepEqual(ids(bad.last('reply')), [ID.dateType]);
-  }
-  assert.equal(db.getBirthday('d5', 'U'), undefined);
+  assert.equal(f.last('reply').flags, 64);
+  assert.match(f.last('reply').content, /6 novembre 2000/);
+  assert.match(f.last('reply').content, /> 🎂 Joyeux anniversaire <@U>/); // phrase par défaut dans l'aperçu
+  assert.deepEqual(ids(f.last('reply')), [ID.text, ID.media, ID.date, ID.del]);
+  const b = db.getBirthday('d2', 'U');
+  assert.deepEqual([b.day, b.month, b.year], [6, 11, 2000]);
 });
 
-test('« Changer la date » depuis le tableau de bord: sélecteur prérempli, mise à jour sur place', async () => {
-  db.setBirthdayDate('d6', 'U', 2, 5, 1999);
-  const f = await button(ID.date, { guildId: 'd6', ...eph });
+test('année facultative; 29 février accepté sans année, refusé avec une année non bissextile', async () => {
+  await modal(ID.modalDate, { month: 2, day: '29', year: '' }, { guildId: 'd3' });
+  assert.equal(db.getBirthday('d3', 'U').year, null);
+  const bad = await modal(ID.modalDate, { month: 2, day: '29', year: '2001' }, { guildId: 'd3b' });
+  assert.match(bad.last('reply').content, /bissextile/);
+  assert.equal(db.getBirthday('d3b', 'U'), undefined);
+});
+
+test('saisies invalides: message clair, bouton Réessayer, rien d\'enregistré', async () => {
+  const cases = [
+    [{ month: 4, day: '31', year: '' }, /Jour invalide/],
+    [{ month: 4, day: 'abc', year: '' }, /nombre/],
+    [{ month: 4, day: '', year: '' }, /nombre/],
+    [{ month: 4, day: '5', year: '20x1' }, /4 chiffres/],
+    [{ month: 4, day: '5', year: '2999' }, /Année invalide/],
+  ];
+  for (const [fields, pattern] of cases) {
+    const f = await modal(ID.modalDate, fields, { guildId: 'd4' });
+    assert.match(f.last('reply').content, pattern);
+    assert.deepEqual(ids(f.last('reply')), [ID.date]);
+  }
+  assert.equal(db.getBirthday('d4', 'U'), undefined);
+});
+
+test('« Changer la date » ouvre la fenêtre préremplie; l\'envoi met à jour le tableau de bord sur place', async () => {
+  db.setBirthdayDate('d5', 'U', 2, 5, 1999);
+  const open = await button(ID.date, { guildId: 'd5', ...eph });
+  const [month, day, year] = dateModalFields(open.last('showModal'));
+  assert.equal(month.options.find((o) => o.default).value, '5');
+  assert.equal(day.value, '2');
+  assert.equal(year.value, '1999');
+
+  const f = await modal(ID.modalDate, { month: 3, day: '7', year: '' }, { guildId: 'd5', ...eph });
   assert.deepEqual(f.calls.map((c) => c.type), ['update']);
-  assert.match(f.last('update').content, /mai · \*\*Jour:\*\* 2 · \*\*Année:\*\* 1999/);
+  assert.equal(db.getBirthday('d5', 'U').month, 3);
 });
 
 // ── Texte ──
@@ -236,7 +233,7 @@ test('suppression: confirmation obligatoire, « Non, garder » ramène au tablea
 });
 
 test('les données restent isolées par serveur', async () => {
-  await modal(ID.modalDate, { date: '1/5' }, { guildId: 'iso-A' });
+  await modal(ID.modalDate, { month: 5, day: '1', year: '' }, { guildId: 'iso-A' });
   assert.ok(db.getBirthday('iso-A', 'U'));
   assert.equal(db.getBirthday('iso-B', 'U'), undefined);
 });
@@ -268,7 +265,7 @@ test('config: fuseau inconnu refusé, valeurs affichées', async () => {
 });
 
 test('erreur interne: réponse générique, pas de crash', async () => {
-  const f = fakeInteraction({ kind: 'button', customId: ID.dateType });
+  const f = fakeInteraction({ kind: 'button', customId: ID.date });
   f.interaction.showModal = async () => { throw new Error('boom'); };
   const orig = console.error; console.error = () => {};
   await handleInteraction(f.interaction);

@@ -8,7 +8,7 @@ import {
 import { buildAnnouncement } from './announce.js';
 import {
   DEFAULT_MESSAGE, MAX_MESSAGE_LENGTH, MONTH_NAMES, daysUntil, formatDate, nextBirthdayYear, nowIn,
-  parseBirthdayInput, validateBirthday,
+  validateBirthday,
 } from './dates.js';
 import {
   deleteBirthday, getBirthday, getGuildConfig, listBirthdays, setBirthdayDate, setBirthdayMedia,
@@ -22,14 +22,7 @@ export const ID = {
   back: 'bday:back',
   // date
   date: 'bday:date',
-  dateType: 'bday:date-type',
-  pickMonth: 'bday:pick-month',
-  pickDayA: 'bday:pick-day-a',
-  pickDayB: 'bday:pick-day-b',
-  pickYear: 'bday:pick-year',
-  pickOk: 'bday:pick-ok',
   modalDate: 'bday:m:date',
-  modalYear: 'bday:m:year',
   // texte
   text: 'bday:text',
   textReset: 'bday:text-reset',
@@ -140,70 +133,30 @@ const nameOf = (i) => i.member?.displayName ?? i.user.displayName ?? i.user.user
 const dash = (i, extra = {}) =>
   buildDashboard({ guildId: i.guildId, userId: i.user.id, name: nameOf(i), ...extra });
 
-// ───────────────────────── Sélecteur de date (« calendrier ») ─────────────────────────
-// Discord n'a pas de composant calendrier: trois listes déroulantes (mois, jours 1-15, jours 16-31;
-// une liste est limitée à 25 choix) + année facultative. État gardé en mémoire le temps de la saisie.
-
-const pickers = new Map(); // `${guild}:${user}` -> {month, day, year, exp}
-const pickerKey = (i) => `${i.guildId}:${i.user.id}`;
-
-function pickerState(i, init) {
-  const cur = pickers.get(pickerKey(i));
-  const state = cur && cur.exp > Date.now() ? cur : { month: null, day: null, year: null, ...init };
-  state.exp = Date.now() + SESSION_TTL_MS;
-  pickers.set(pickerKey(i), state);
-  return state;
-}
-
-function pickerScreen(state, notice = null) {
-  const daySelect = (id, from, to, placeholder) => new StringSelectMenuBuilder()
-    .setCustomId(id).setPlaceholder(placeholder)
-    .addOptions(Array.from({ length: to - from + 1 }, (_, k) => {
-      const d = from + k;
-      return { label: String(d), value: String(d), default: state.day === d };
-    }));
-  const month = new StringSelectMenuBuilder().setCustomId(ID.pickMonth).setPlaceholder('Mois')
-    .addOptions(MONTH_NAMES.map((n, k) => ({
-      label: n[0].toUpperCase() + n.slice(1), value: String(k + 1), default: state.month === k + 1,
-    })));
-
-  const summary = `**Mois:** ${state.month ? MONTH_NAMES[state.month - 1] : '—'} · **Jour:** ${state.day ?? '—'} · **Année:** ${state.year ?? '— (facultative)'}`;
-  return screen(
-    [notice, '### 📅 Quand est ton anniversaire ?', 'Choisis ton **mois** et ton **jour** dans les listes.', summary].filter(Boolean).join('\n'),
-    row(month),
-    row(daySelect(ID.pickDayA, 1, 15, 'Jour (1 à 15)')),
-    row(daySelect(ID.pickDayB, 16, 31, 'Jour (16 à 31)')),
-    row(
-      button(ID.pickYear, 'Année (facultatif)', '🎈'),
-      button(ID.dateType, 'Écrire la date', '✍️'),
-      button(ID.pickOk, 'Valider', '✅', ButtonStyle.Success).setDisabled(!(state.month && state.day)),
-    ),
-  );
-}
-
 // ───────────────────────── Fenêtres de saisie ─────────────────────────
 
 const textInput = (id, style) => new TextInputBuilder().setCustomId(id).setStyle(style);
 
-function dateModal() {
+/**
+ * Une seule fenêtre, un seul envoi: liste du mois (12 choix), jour tapé (une liste ne peut pas dépasser
+ * 25 choix, il en faudrait 31), année facultative. Sans état serveur.
+ */
+function dateModal(current) {
+  const month = new StringSelectMenuBuilder().setCustomId('month').setPlaceholder('Choisis le mois')
+    .setRequired(true)
+    .addOptions(MONTH_NAMES.map((n, k) => ({
+      label: n[0].toUpperCase() + n.slice(1), value: String(k + 1), default: current?.month === k + 1,
+    })));
+  const day = textInput('day', TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(2).setPlaceholder('ex : 6');
+  const year = textInput('year', TextInputStyle.Short).setRequired(false).setMinLength(0).setMaxLength(4).setPlaceholder('ex : 2000');
+  if (current?.day) day.setValue(String(current.day));
+  if (current?.year) year.setValue(String(current.year));
   return new ModalBuilder().setCustomId(ID.modalDate).setTitle('Ton anniversaire').addLabelComponents(
-    new LabelBuilder()
-      .setLabel('Ta date de naissance')
-      .setDescription('Jour et mois suffisent. L\'année est facultative (elle sert à afficher ton âge).')
-      .setTextInputComponent(textInput('date', TextInputStyle.Short)
-        .setRequired(true).setMaxLength(30).setPlaceholder('ex : 06/11/2000 ou 6 novembre')),
-  );
-}
-
-function yearModal(current) {
-  const input = textInput('year', TextInputStyle.Short)
-    .setRequired(false).setMaxLength(4).setMinLength(0).setPlaceholder('ex : 2000');
-  if (current) input.setValue(String(current));
-  return new ModalBuilder().setCustomId(ID.modalYear).setTitle('Année de naissance').addLabelComponents(
-    new LabelBuilder()
-      .setLabel('Année (facultatif)')
+    new LabelBuilder().setLabel('Mois').setStringSelectMenuComponent(month),
+    new LabelBuilder().setLabel('Jour').setTextInputComponent(day),
+    new LabelBuilder().setLabel('Année de naissance (facultatif)')
       .setDescription('Sert uniquement à afficher ton âge. Laisse vide pour ne pas la donner.')
-      .setTextInputComponent(input),
+      .setTextInputComponent(year),
   );
 }
 
@@ -350,20 +303,17 @@ export function upcomingText(guildId) {
 
 // ───────────────────────── Routage ─────────────────────────
 
-/** Ouvre le parcours: sélecteur de date pour un nouveau, tableau de bord pour un inscrit. */
+/** Ouvre le parcours: fenêtre de date pour un nouveau, tableau de bord pour un inscrit. */
 export async function openFlow(i) {
-  if (!getBirthday(i.guildId, i.user.id)) {
-    return i.reply({ ...pickerScreen(pickerState(i)), flags: EPHEMERAL });
-  }
+  if (!getBirthday(i.guildId, i.user.id)) return i.showModal(dateModal(null));
   return i.reply({ ...dash(i), flags: EPHEMERAL });
 }
 
-const retryDate = (message) => screen(message, row(button(ID.dateType, 'Réessayer', '✍️', ButtonStyle.Primary)));
+const retryDate = (message) => screen(message, row(button(ID.date, 'Réessayer', '📅', ButtonStyle.Primary)));
 
 async function saveDate(i, { day, month, year }) {
   const existed = Boolean(getBirthday(i.guildId, i.user.id));
   setBirthdayDate(i.guildId, i.user.id, day, month, year);
-  pickers.delete(pickerKey(i));
   return respond(i, dash(i, { notice: existed ? null : '✅ C\'est enregistré ! Tu peux maintenant personnaliser ton message ⬇️' }));
 }
 
@@ -384,53 +334,25 @@ async function applyMedia(i, produce) {
 
 const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) : openFlow(i));
 
-const pickDay = (i) => {
-  const state = pickerState(i);
-  state.day = Number(i.values[0]);
-  return respond(i, pickerScreen(state));
-};
-
 const actions = {
   [ID.open]: openFlow,
   [ID.upcoming]: (i) => i.reply({ content: upcomingText(i.guildId), flags: EPHEMERAL, allowedMentions: NO_MENTIONS }),
   [ID.back]: withBirthday((i) => respond(i, dash(i))),
 
   // Date
-  [ID.date]: (i) => {
-    const b = getBirthday(i.guildId, i.user.id);
-    pickers.delete(pickerKey(i));
-    return respond(i, pickerScreen(pickerState(i, b ? { month: b.month, day: b.day, year: b.year } : {})));
-  },
-  [ID.dateType]: (i) => i.showModal(dateModal()),
-  [ID.pickMonth]: (i) => {
-    const state = pickerState(i);
-    state.month = Number(i.values[0]);
-    return respond(i, pickerScreen(state));
-  },
-  [ID.pickDayA]: pickDay,
-  [ID.pickDayB]: pickDay,
-  [ID.pickYear]: (i) => i.showModal(yearModal(pickerState(i).year)),
-  async [ID.modalYear](i) {
-    const state = pickerState(i);
-    const raw = i.fields.getTextInputValue('year').trim();
-    if (raw && !/^\d{4}$/.test(raw)) return respond(i, pickerScreen(state, '❌ L\'année doit avoir 4 chiffres (ex: 2000).'));
-    state.year = raw ? Number(raw) : null;
-    return respond(i, pickerScreen(state));
-  },
-  async [ID.pickOk](i) {
-    const state = pickerState(i);
-    if (!state.month || !state.day) return respond(i, pickerScreen(state, '❌ Choisis d\'abord un mois et un jour.'));
-    const error = validateBirthday(state, new Date().getFullYear());
-    if (error) return respond(i, pickerScreen(state, `❌ ${error}`));
-    return saveDate(i, state);
-  },
+  [ID.date]: (i) => i.showModal(dateModal(getBirthday(i.guildId, i.user.id))),
   async [ID.modalDate](i) {
-    const parsed = parseBirthdayInput(i.fields.getTextInputValue('date'));
-    const error = parsed ? validateBirthday(parsed, new Date().getFullYear()) : 'Je n\'ai pas compris cette date.';
-    if (error) {
-      return i.reply({ ...retryDate(`❌ ${error}\nÉcris par exemple **06/11/2000** ou **6 novembre** (l'année est facultative).`), flags: EPHEMERAL });
-    }
-    return saveDate(i, parsed);
+    const month = Number(i.fields.getStringSelectValues('month')[0]);
+    const dayRaw = i.fields.getTextInputValue('day').trim();
+    const yearRaw = i.fields.getTextInputValue('year').trim();
+    const day = /^\d{1,2}$/.test(dayRaw) ? Number(dayRaw) : NaN;
+    const year = yearRaw ? (/^\d{4}$/.test(yearRaw) ? Number(yearRaw) : NaN) : null;
+
+    const error = Number.isNaN(day) ? 'Le jour doit être un nombre (ex: 6).'
+      : Number.isNaN(year) ? 'L\'année doit avoir 4 chiffres (ex: 2000) ou rester vide.'
+        : validateBirthday({ day, month, year }, new Date().getFullYear());
+    if (error) return i.reply({ ...retryDate(`❌ ${error}`), flags: EPHEMERAL });
+    return saveDate(i, { day, month, year });
   },
 
   // Texte
@@ -482,9 +404,9 @@ const actions = {
   },
 };
 
-/** Boutons, listes et fenêtres du parcours (customId `bday:*`). Retourne false si l'interaction n'est pas pour nous. */
+/** Boutons et fenêtres du parcours (customId `bday:*`). Retourne false si l'interaction n'est pas pour nous. */
 export async function handlePanelInteraction(i) {
-  if (!(i.isButton() || i.isStringSelectMenu() || i.isModalSubmit()) || !i.guildId) return false;
+  if (!(i.isButton() || i.isModalSubmit()) || !i.guildId) return false;
   const action = actions[i.customId];
   if (!action) return false;
   await action(i);
