@@ -45,9 +45,9 @@ main() {
   echo "▶ Démarrage"
   docker compose up -d --no-build --remove-orphans
 
-  local cid status="" i
+  local cid status=""
   cid=$(docker compose ps -q bot)
-  for i in $(seq 1 24); do
+  for _ in $(seq 1 24); do
     status=$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo none)
     [[ $status == healthy ]] && break
     sleep 5

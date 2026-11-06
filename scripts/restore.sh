@@ -4,7 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-mapfile -t backups < <(ls -1 data/backups 2>/dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$' | sort)
+backups=()
+for d in data/backups/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z; do
+  [[ -d $d ]] && backups+=("${d##*/}")
+done
 if [[ $# -eq 0 ]]; then printf '%s\n' "${backups[@]:-}"; exit 0; fi
 [[ ${#backups[@]} -gt 0 ]] || { echo "aucune sauvegarde" >&2; exit 1; }
 

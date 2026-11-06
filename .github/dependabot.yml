@@ -1,5 +1,20 @@
 version: 2
 updates:
-  - { package-ecosystem: npm, directory: /, schedule: { interval: weekly } }
-  - { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directory: /, schedule: { interval: weekly } }
+  # Une seule PR groupée par écosystème: moins de bruit, un seul run à valider.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      npm: { patterns: ["*"] }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    ignore:
+      # Node: on reste sur la LTS paire; les versions impaires (25…) sont éphémères.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

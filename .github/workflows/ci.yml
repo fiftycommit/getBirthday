@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 1. Code: tests unitaires + lint des scripts shell.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -26,20 +27,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: shellcheck scripts/*.sh
 
-  deploy:
-    # Uniquement sur master (les PR/forks n'ont jamais accès aux secrets).
-    if: github.event_name == 'push'
+  # 2. Image: construite comme en prod (arm64 natif), puis *exécutée* avec les contraintes du compose
+  #    (non-root, FS en lecture seule, capabilities retirées). Une image qui ne démarre pas n'est jamais poussée.
+  #    Sur les PR (dont Dependabot) ce job valide aussi les montées de version de Node/Docker/actions.
+  image:
     needs: test
-    # Runner arm64 natif = même architecture que le serveur, sans émulation QEMU.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     permissions:
       contents: read
       packages: write
-    concurrency:
-      group: deploy
-      cancel-in-progress: false
     env:
       REGISTRY: ghcr.io
     steps:
@@ -47,24 +46,48 @@ jobs:
       - name: Nom d'image (minuscules requis par GHCR)
         run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # Les couches inchangées (base node, node_modules) sont réutilisées du cache et ne sont pas
-      # re-poussées: un push de code n'envoie que la couche `src`.
+      # Les couches inchangées (base node, node_modules) viennent du cache et ne sont pas re-poussées:
+      # un push de code n'envoie que la couche `src`.
       - uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/arm64
-          push: true
+          load: true
           tags: ${{ env.IMAGE }}:${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
           sbom: false
+      - name: Valider docker-compose.yml
+        run: touch .env && docker compose config -q
+      - name: Smoke test dans l'image (contraintes de prod)
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke-data"
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges:true \
+            --user "$(id -u):$(id -g)" -v "$RUNNER_TEMP/smoke-data:/app/data" \
+            "$IMAGE:${{ github.sha }}" node src/smoke.js
+      - name: Pousser l'image (master uniquement)
+        if: github.event_name == 'push'
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:${{ github.sha }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 3. Déploiement: uniquement master (les PR/forks n'ont jamais accès aux secrets).
+  deploy:
+    if: github.event_name == 'push'
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
       - name: Configurer SSH
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -79,8 +102,9 @@ jobs:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s\n' "$TOKEN" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            -o ConnectTimeout=15 -o ConnectionAttempts=3 -o ServerAliveInterval=15 \
             "$TARGET" "deploy ${{ github.sha }}"
-      # Rétention du registre: on garde les 10 versions les plus récentes.
+      # Rétention du registre: on garde les 10 versions les plus récentes (n'échoue jamais le run).
       - uses: actions/delete-package-versions@v5
         continue-on-error: true
         with:

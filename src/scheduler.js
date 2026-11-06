@@ -56,19 +56,22 @@ async function announceGuild(client, config) {
   }
 }
 
-export function startScheduler(client) {
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      for (const config of listGuildConfigs()) {
-        await announceGuild(client, config).catch((err) => console.error('scheduler', err));
-      }
-    } finally {
-      running = false;
+let running = false;
+
+/** Un passage: annonce les anniversaires dus pour tous les serveurs configurés. */
+export async function runTick(client) {
+  if (running) return;
+  running = true;
+  try {
+    for (const config of listGuildConfigs()) {
+      await announceGuild(client, config).catch((err) => console.error('scheduler', err));
     }
-  };
-  tick();
-  return setInterval(tick, TICK_MS);
+  } finally {
+    running = false;
+  }
+}
+
+export function startScheduler(client) {
+  runTick(client);
+  return setInterval(() => runTick(client), TICK_MS);
 }

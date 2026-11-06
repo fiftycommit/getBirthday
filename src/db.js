@@ -1,7 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 
-export const DATA_DIR = new URL('../data/', import.meta.url).pathname;
+// DATA_DIR surcharge l'emplacement (tests, smoke test); par défaut ./data à la racine du projet.
+export const DATA_DIR = process.env.DATA_DIR
+  ? `${process.env.DATA_DIR.replace(/\/+$/, '')}/`
+  : new URL('../data/', import.meta.url).pathname;
 export const MEDIA_DIR = `${DATA_DIR}media/`;
 mkdirSync(MEDIA_DIR, { recursive: true });
 
