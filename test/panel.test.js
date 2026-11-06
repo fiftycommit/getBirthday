@@ -123,7 +123,8 @@ test('média: le menu propose GIF, appareil, lien; chaque choix ouvre la bonne f
 test('média par lien: http(s) uniquement, affiché dans l\'aperçu', async () => {
   db.setBirthdayDate('m2', 'U', 6, 11, null);
   const bad = await modal(ID.modalMediaLink, { url: 'javascript:alert(1)' }, { guildId: 'm2', ...eph });
-  assert.match(view(bad.last('followUp')).content, /invalide/);
+  assert.match(view(bad.last('editReply')).content, /invalide/);
+  assert.ok(ids(bad.last('editReply')).includes(ID.mediaBack));
   assert.equal(db.getBirthday('m2', 'U').media_url, null);
 
   const ok = await modal(ID.modalMediaLink, { url: 'https://tenor.com/x' }, { guildId: 'm2', ...eph });
@@ -151,9 +152,9 @@ test('média par fichier: copié localement; le remplacer supprime l\'ancien fic
 test('média par fichier: type non supporté ou trop lourd refusé sans rien changer', async () => {
   db.setBirthdayDate('m4', 'U', 6, 11, null);
   const pdf = await modal(ID.modalMediaFile, {}, { guildId: 'm4', ...eph, files: [{ url: 'u', contentType: 'application/pdf', size: 1 }] });
-  assert.match(view(pdf.last('followUp')).content, /Format non supporté/);
+  assert.match(view(pdf.last('editReply')).content, /Format non supporté/);
   const big = await modal(ID.modalMediaFile, {}, { guildId: 'm4', ...eph, files: [{ url: 'u', contentType: 'video/mp4', size: 50 * 1024 * 1024 }] });
-  assert.match(view(big.last('followUp')).content, /trop lourd/);
+  assert.match(view(big.last('editReply')).content, /trop lourd/);
   assert.equal(db.getBirthday('m4', 'U').media_path, null);
 });
 

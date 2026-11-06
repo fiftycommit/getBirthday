@@ -164,7 +164,8 @@ const ephemeral = (payload) => ({ ...payload, flags: (payload.flags ?? 0) | EPHE
 
 /** Répond sur place si on clique depuis un message privé, sinon crée un nouveau message privé. */
 async function respond(i, payload) {
-  const fromDashboard = i.isFromMessage?.() && i.message.flags.has(EPHEMERAL);
+  const fromDashboard = Boolean(i.message?.flags.has(EPHEMERAL)) &&
+    (i.isButton?.() || i.isStringSelectMenu?.() || i.isFromMessage?.());
   // content/embeds remis à vide: un message privé antérieur au passage en V2 peut encore en porter.
   if (fromDashboard) return i.update({ content: null, embeds: [], ...payload, attachments: [] });
   return i.reply(ephemeral(payload));
@@ -225,7 +226,7 @@ const mediaLinkModal = () => new ModalBuilder().setCustomId(ID.modalMediaLink).s
 // ───────────────────────── Média: menu, GIF via messages privés ─────────────────────────
 
 const mediaMenu = () => screen(
-  '### 🖼️ Ajouter un média\nChoisis une source pour accompagner ton message.',
+  '### 🖼️ Ajouter un média\nChoisis comment ajouter ton GIF, ta photo ou ta vidéo. Tu peux revenir en arrière sans rien changer.',
   row(
     ...(klipyEnabled() ? [button(ID.gifSearch, 'GIF KLIPY', '🔎', ButtonStyle.Primary)] : []),
     ...(giphy.giphyEnabled() ? [button(ID.giphySearch, 'GIF GIPHY', '🔎', ButtonStyle.Primary)] : []),
@@ -318,14 +319,14 @@ async function startGifSession(i) {
       row(
         new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Ouvrir la conversation').setEmoji('💬')
           .setURL(`https://discord.com/channels/@me/${dm.id}`),
-        backButton(),
+        button(ID.back, 'Annuler', '↩️'),
       ),
     ));
   } catch (err) {
     if (err.code !== 50007) throw err; // 50007: MP fermés
     return respond(i, screen(
       '### ❌ Je ne peux pas t\'écrire en privé\nAutorise les messages privés des membres de ce serveur (Paramètres du serveur → Paramètres de confidentialité), ou choisis une autre méthode.',
-      row(button(ID.mediaFile, 'Depuis mon appareil', '📤'), button(ID.mediaLink, 'Avec un lien', '🔗'), backButton()),
+      row(button(ID.mediaFile, 'Depuis mon appareil', '📤'), button(ID.mediaLink, 'Avec un lien', '🔗'), button(ID.mediaBack, 'Retour aux médias', '↩️')),
     ));
   }
 }
@@ -430,7 +431,8 @@ async function applyMedia(i, produce) {
   try {
     media = await produce();
   } catch (err) {
-    return i.followUp({ content: `❌ ${err.message}`, flags: EPHEMERAL });
+    return respondDeferred(i, screen(`### ❌ ${err.message}\nTon média précédent est conservé. Choisis une autre méthode ou réessaie.`,
+      row(button(ID.mediaBack, 'Retour aux médias', '↩️'), backButton())));
   }
   const previous = getBirthday(i.guildId, i.user.id);
   setBirthdayMedia(i.guildId, i.user.id, media);

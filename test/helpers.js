@@ -37,7 +37,7 @@ export function fakeInteraction({
     isButton: () => kind === 'button',
     isStringSelectMenu: () => kind === 'select',
     isModalSubmit: () => kind === 'modal',
-    isFromMessage: () => kind !== 'command' && fromEphemeral !== null,
+    isFromMessage: kind === 'modal' ? () => fromEphemeral !== null : undefined,
     message: { flags: { has: (f) => fromEphemeral && f === MessageFlags.Ephemeral } },
     options: { getChannel: get, getInteger: get, getString: get, getBoolean: get },
     fields: {
