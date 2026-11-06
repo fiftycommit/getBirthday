@@ -12,9 +12,12 @@ Bot Discord d'anniversaires: chacun enregistre sa date, personnalise son message
 
 ## Parcours membre
 
-1. Clic sur **🎂 Ajouter mon anniversaire** (panneau) → saisie de la date en texte libre (`06/11/2000`, `6 novembre`…, année facultative).
-2. Un message **visible par lui seul** apparaît: l'aperçu exact de l'annonce (phrase par défaut incluse) et des boutons **✏️ Modifier mon message**, **🖼️ Ajouter un média** (fichier ou lien), **📅 Changer la date**, **🗑️ Tout supprimer** (avec confirmation).
-3. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
+1. Clic sur **🎂 Ajouter mon anniversaire** (panneau) → **sélecteur de date**: listes déroulantes mois / jour (+ année facultative), ou bouton **✍️ Écrire la date** (`06/11/2000`, `6 novembre`…).
+2. Un message **visible par lui seul** apparaît: l'aperçu exact de l'annonce (phrase par défaut incluse) et des boutons **✏️ Modifier mon message**, **🖼️ Ajouter un média**, **📅 Changer la date**, **🗑️ Tout supprimer** (avec confirmation).
+3. **Média**: *🎞️ Choisir un GIF* (le bot écrit en message privé, le membre utilise le vrai bouton GIF/sticker de Discord, le message se met à jour tout seul), *📤 Depuis mon appareil* (image, GIF, vidéo ≤ 10 Mo) ou *🔗 Avec un lien*.
+4. Chaque action met à jour ce même message: l'aperçu est toujours à jour.
+
+Discord n'expose ni son sélecteur GIF/stickers ni de calendrier aux bots: d'où le passage par les messages privés pour les GIF (le contenu des MP est lisible sans intention privilégiée) et les listes déroulantes pour la date. Les stickers animés (Lottie) ne sont pas supportés.
 
 Variables du message: `{user}` (mention), `{nom}`, `{age}`, `{date}`.
 

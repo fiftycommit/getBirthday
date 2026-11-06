@@ -1,7 +1,8 @@
 import { writeFileSync } from 'node:fs';
-import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Client, Events, GatewayIntentBits, Partials, REST, Routes } from 'discord.js';
 import { startBackupSchedule } from './backup.js';
 import { commandDefinitions, handleInteraction } from './commands.js';
+import { handleDirectMessage } from './panel.js';
 import { startScheduler } from './scheduler.js';
 
 const { DISCORD_TOKEN, DISCORD_CLIENT_ID, DISCORD_GUILD_ID } = process.env;
@@ -16,7 +17,12 @@ const route = DISCORD_GUILD_ID
   : Routes.applicationCommands(DISCORD_CLIENT_ID);
 await rest.put(route, { body: commandDefinitions });
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// DirectMessages + partial Channel: réception des MP (sélecteur GIF). Le contenu des MP est lisible
+// sans l'intention privilégiée MessageContent.
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+  partials: [Partials.Channel],
+});
 client.once(Events.ClientReady, (c) => {
   console.log(`Connecté en tant que ${c.user.tag}`);
   startBackupSchedule();
@@ -27,4 +33,6 @@ client.once(Events.ClientReady, (c) => {
   setInterval(beat, 15_000);
 });
 client.on(Events.InteractionCreate, handleInteraction);
+client.on(Events.MessageCreate, (message) =>
+  handleDirectMessage(message).catch((err) => console.error('message privé', err)));
 await client.login(DISCORD_TOKEN);

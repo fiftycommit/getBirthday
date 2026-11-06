@@ -11,13 +11,13 @@ export function useTempDataDir() {
 }
 
 /**
- * Fausse interaction Discord. `kind`: 'command' | 'button' | 'modal'.
+ * Fausse interaction Discord. `kind`: 'command' | 'button' | 'select' | 'modal'.
  * `fromEphemeral`: le bouton/la fenêtre vient d'un message privé (tableau de bord) — sinon du panneau public.
  * `calls` garde l'ordre des appels (reply/update/showModal/…) pour vérifier le comportement observable.
  */
 export function fakeInteraction({
   kind = 'command', guildId = 'G', userId = 'U', commandName = 'anniversaire', customId,
-  opts = {}, fields = {}, files = null, fromEphemeral = false, channel = null,
+  opts = {}, fields = {}, files = null, fromEphemeral = false, channel = null, values = [], dm = null,
 }) {
   const calls = [];
   const rec = (type) => async (payload) => { calls.push({ type, payload }); };
@@ -26,7 +26,8 @@ export function fakeInteraction({
     guildId,
     commandName,
     customId,
-    user: { id: userId, username: 'user', displayName: 'User' },
+    user: { id: userId, username: 'user', displayName: 'User', createDM: async () => { if (dm instanceof Error) throw dm; return dm; } },
+    values,
     member: { displayName: 'User' },
     channel,
     guild: { members: { me: {} } },
@@ -34,6 +35,7 @@ export function fakeInteraction({
     replied: false,
     isChatInputCommand: () => kind === 'command',
     isButton: () => kind === 'button',
+    isStringSelectMenu: () => kind === 'select',
     isModalSubmit: () => kind === 'modal',
     isFromMessage: () => kind !== 'command' && fromEphemeral !== null,
     message: { flags: { has: (f) => fromEphemeral && f === MessageFlags.Ephemeral } },
