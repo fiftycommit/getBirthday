@@ -54,7 +54,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # Les couches inchangées (base node, node_modules) sont réutilisées du cache et ne sont pas
       # re-poussées: un push de code n'envoie que la couche `src`.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/arm64
