@@ -21,6 +21,7 @@ export const ID = {
   open: 'bday:open',
   upcoming: 'bday:upcoming',
   privacy: 'bday:privacy',
+  closeInfo: 'bday:close-info',
   back: 'bday:back',
   finish: 'bday:finish',
   mediaBack: 'bday:media-back',
@@ -479,8 +480,13 @@ const actions = {
     + '**Visibilité** : ton jour et ton mois figurent dans les prochains anniversaires. Le jour J, ton message, ton média et éventuellement ton âge sont publiés dans le salon choisi. Les personnes autorisées à accéder au serveur d’hébergement peuvent accéder aux données ; Discord et les fournisseurs de GIF interviennent selon les fonctions utilisées.\n\n'
     + '**Durée** : les données restent enregistrées jusqu’à suppression. En quittant le serveur, elles sont supprimées lorsque le bot constate ton départ lors du prochain anniversaire. Les 30 dernières sauvegardes peuvent conserver d’anciennes données ; leur durée dépend de la fréquence des sauvegardes. Des copies manuelles peuvent exister.\n\n'
     + '**Modifier ou supprimer** : ouvre « Mon anniversaire », puis « Tout supprimer ». Les annonces déjà publiées sur Discord et les sauvegardes ne sont pas effacées par ce bouton. Pour une demande sur ces copies ou tes droits, contacte l’administrateur du serveur, qui pourra joindre le responsable du bot.\n\n'
-    + '### Crédits\nCréé par <@1220382532961566731>.'
+    + '### Crédits\nCréé par <@1220382532961566731>.',
+    row(button(ID.closeInfo, 'Fermer', '↩️')),
   ))),
+  [ID.closeInfo]: async (i) => {
+    await i.deferUpdate();
+    await i.deleteReply();
+  },
   [ID.open]: openFlow,
   [ID.upcoming]: (i) => i.reply({ content: upcomingText(i.guildId), flags: EPHEMERAL, allowedMentions: NO_MENTIONS }),
   [ID.finish]: withBirthday(async (i) => {

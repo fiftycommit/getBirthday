@@ -478,6 +478,9 @@ test('confidentialité : consultable sans inscription et indique les limites de 
   const result = await button(ID.privacy, { guildId: 'privacy' });
   assert.match(view(result.last('reply')).content, /sauvegardes/);
   assert.match(view(result.last('reply')).content, /annonces déjà publiées/);
+  assert.ok(ids(result.last('reply')).includes(ID.closeInfo));
+  const close = await button(ID.closeInfo, { guildId: 'privacy', ...eph });
+  assert.deepEqual(close.calls.map((call) => call.type), ['deferUpdate', 'deleteReply']);
   assert.equal(db.getBirthday('privacy', 'U'), undefined);
 });
 
