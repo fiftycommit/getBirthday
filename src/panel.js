@@ -468,7 +468,14 @@ const withBirthday = (fn) => (i) => (getBirthday(i.guildId, i.user.id) ? fn(i) :
 const actions = {
   [ID.privacy]: (i) => i.reply(ephemeral(screen(
     '### 🔒 Tes données\n'
-    + '**Enregistrées** : ton identifiant Discord, le serveur, ta date (année facultative), ton message et ton média éventuels, et l’année de la dernière annonce.\n\n'
+    + '**Données enregistrées**\n'
+    + '• Ton identifiant Discord : pour te mentionner le jour de ton anniversaire.\n'
+    + '• L’identifiant du serveur : pour publier l’annonce au bon endroit.\n'
+    + '• Le jour et le mois de naissance : pour connaître la date de ton anniversaire.\n'
+    + '• L’année de naissance (facultative) : pour calculer ton âge.\n'
+    + '• Ton message personnalisé (facultatif) : pour personnaliser ton annonce.\n'
+    + '• Ton média ou son lien (facultatif) : pour accompagner ton annonce.\n'
+    + '• L’année de la dernière annonce : pour éviter de publier plusieurs fois la même année.\n\n'
     + '**Visibilité** : ton jour et ton mois figurent dans les prochains anniversaires. Le jour J, ton message, ton média et éventuellement ton âge sont publiés dans le salon choisi. Les personnes autorisées à accéder au serveur d’hébergement peuvent accéder aux données ; Discord et les fournisseurs de GIF interviennent selon les fonctions utilisées.\n\n'
     + '**Durée** : les données restent enregistrées jusqu’à suppression. En quittant le serveur, elles sont supprimées lorsque le bot constate ton départ lors du prochain anniversaire. Les 30 dernières sauvegardes peuvent conserver d’anciennes données ; leur durée dépend de la fréquence des sauvegardes. Des copies manuelles peuvent exister.\n\n'
     + '**Modifier ou supprimer** : ouvre « Mon anniversaire », puis « Tout supprimer ». Les annonces déjà publiées sur Discord et les sauvegardes ne sont pas effacées par ce bouton. Pour une demande sur ces copies ou tes droits, contacte l’administrateur du serveur, qui pourra joindre le responsable du bot.\n\n'
